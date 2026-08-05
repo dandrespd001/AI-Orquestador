@@ -1,0 +1,86 @@
+schema_version = 1
+
+[[models]]
+id = "gpt-5.6-sol"
+family = "openai-gpt"
+provider = "openai"
+transport = "codex_cli"
+route_model = "gpt-5.6-sol"
+official = true
+status = "available"
+roles = ["implementation", "review", "docs", "tests"]
+max_sensitivity = "financial_control"
+max_concurrency = 2
+
+[[models]]
+id = "gpt-5.6-terra"
+family = "openai-gpt"
+provider = "openai"
+transport = "codex_cli"
+route_model = "gpt-5.6-terra"
+official = true
+status = "available"
+roles = ["implementation", "review"]
+max_sensitivity = "financial_control"
+max_concurrency = 2
+
+[[models]]
+id = "gpt-5.6-luna"
+family = "openai-gpt"
+provider = "openai"
+transport = "codex_cli"
+route_model = "gpt-5.6-luna"
+official = true
+status = "available"
+roles = ["architecture", "statistics", "security", "review"]
+max_sensitivity = "financial_control"
+max_concurrency = 1
+
+[[models]]
+id = "claude-opus"
+family = "anthropic-claude"
+provider = "anthropic"
+transport = "claude_cli"
+route_model = "opus"
+official = true
+status = "available"
+roles = ["architecture", "review", "long_context", "security"]
+max_sensitivity = "financial_control"
+max_concurrency = 1
+
+[[models]]
+id = "deepseek-v4-flash"
+family = "deepseek"
+provider = "deepseek"
+transport = "omniroute"
+route_model = "deepseek/deepseek-v4-flash"
+official = true
+status = "available"
+roles = ["tests", "boilerplate", "docs", "implementation"]
+max_sensitivity = "internal"
+max_concurrency = 3
+
+[[models]]
+id = "MiniMax-M3"
+family = "minimax"
+provider = "minimax"
+transport = "omniroute"
+route_model = "minimax/MiniMax-M3"
+official = true
+status = "key_rotation_required"
+roles = ["long_context", "implementation", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+
+[[models]]
+id = "kimi-official"
+family = "moonshot-kimi"
+provider = "moonshot"
+transport = "omniroute"
+route_model = "moonshot/kimi-k3"
+official = true
+status = "quota_unavailable"
+roles = ["long_context", "research", "implementation"]
+max_sensitivity = "internal"
+max_concurrency = 1
+

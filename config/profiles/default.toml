@@ -1,0 +1,17 @@
+schema_version = 1
+name = "default"
+auto_execute_sensitivities = ["public", "internal"]
+allowed_models = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "claude-opus",
+  "deepseek-v4-flash",
+  "MiniMax-M3",
+  "kimi-official",
+]
+deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web"]
+protected_path_prefixes = [".env", ".git", ".codex", ".claude", ".agents"]
+deterministic_gates = []
+minimax_mode = "omniroute"
+

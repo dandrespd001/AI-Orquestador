@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-orchestrator"
+version = "0.1.0"
+description = "Policy-first orchestration for official LLM subscriptions"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.optional-dependencies]
+eval = [
+  "inspect-ai>=0.3,<1",
+  "mlflow>=3,<4",
+]
+
+[project.scripts]
+ai-orchestrator = "ai_orchestrator.cli:main"
+ai-orchestrator-omniroute-wrapper = "ai_orchestrator.service_wrapper:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

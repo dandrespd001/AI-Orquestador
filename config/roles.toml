@@ -1,0 +1,42 @@
+schema_version = 1
+
+[roles.architecture]
+models = ["claude-opus", "gpt-5.6-luna"]
+reviewers = ["gpt-5.6-luna", "claude-opus"]
+
+[roles.statistics]
+models = ["gpt-5.6-luna", "claude-opus"]
+reviewers = ["claude-opus", "gpt-5.6-sol"]
+
+[roles.security]
+models = ["gpt-5.6-luna", "claude-opus"]
+reviewers = ["claude-opus", "gpt-5.6-sol"]
+
+[roles.implementation]
+models = ["gpt-5.6-sol", "gpt-5.6-terra", "deepseek-v4-flash", "MiniMax-M3"]
+reviewers = ["claude-opus", "gpt-5.6-luna"]
+
+[roles.tests]
+models = ["deepseek-v4-flash", "gpt-5.6-sol"]
+reviewers = ["gpt-5.6-sol", "claude-opus"]
+
+[roles.boilerplate]
+models = ["deepseek-v4-flash", "gpt-5.6-sol"]
+reviewers = ["gpt-5.6-sol", "claude-opus"]
+
+[roles.long_context]
+models = ["MiniMax-M3", "kimi-official", "claude-opus"]
+reviewers = ["gpt-5.6-luna", "claude-opus"]
+
+[roles.research]
+models = ["kimi-official", "claude-opus", "deepseek-v4-flash"]
+reviewers = ["gpt-5.6-luna", "claude-opus"]
+
+[roles.docs]
+models = ["deepseek-v4-flash", "gpt-5.6-sol", "MiniMax-M3"]
+reviewers = ["gpt-5.6-sol", "claude-opus"]
+
+[roles.review]
+models = ["gpt-5.6-luna", "claude-opus", "gpt-5.6-sol"]
+reviewers = ["claude-opus", "gpt-5.6-luna"]
+

@@ -1,0 +1,23 @@
+[Unit]
+Description=AI Orchestrator private storage maintenance
+ConditionPathExists=%h/.local/bin/ai-orchestrator
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=%h/.local/bin/ai-orchestrator storage maintain --apply-permissions --purge-metadata
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.omniroute %h/.local/share/opencode %h/.codex %h/.claude %h/.kimi-code %h/.minimax_mcp %h/.local/share/ai-orchestrator %h/.config/ai-orchestrator
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX
+
