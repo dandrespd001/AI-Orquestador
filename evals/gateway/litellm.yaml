@@ -1,0 +1,14 @@
+model_list:
+  - model_name: mock-model
+    litellm_params:
+      model: openai/mock-model
+      api_base: http://aio-mock:8000/v1
+      api_key: benchmark-not-a-secret
+litellm_settings:
+  drop_params: false
+  set_verbose: false
+  success_callback: []
+  failure_callback: []
+general_settings:
+  disable_spend_logs: true
+  disable_error_logs: true

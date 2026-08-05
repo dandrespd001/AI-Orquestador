@@ -40,6 +40,8 @@ SQLITE_TARGETS = (
     (Path.home() / ".minimax_mcp" / "tasks.db", "minimax_bridge"),
 )
 
+OFFICIAL_OMNIROUTE_PROVIDERS = frozenset({"deepseek", "kimi-coding", "moonshot", "minimax"})
+
 
 def _mode(path: Path) -> int:
     return stat.S_IMODE(path.lstat().st_mode)
@@ -168,6 +170,64 @@ def audit_storage() -> dict[str, Any]:
                 )
             )
 
+    provider_inventory: list[dict[str, Any]] = []
+    content_inventory: dict[str, int] = {}
+    omniroute_db = Path.home() / ".omniroute" / "storage.sqlite"
+    if omniroute_db.is_file() and not omniroute_db.is_symlink():
+        try:
+            uri = f"file:{omniroute_db}?mode=ro"
+            with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
+                provider_inventory = [
+                    {"provider": str(row[0]), "active": bool(row[1]), "connections": int(row[2])}
+                    for row in connection.execute(
+                        "SELECT provider, is_active, COUNT(*) FROM provider_connections "
+                        "GROUP BY provider, is_active ORDER BY provider, is_active"
+                    )
+                ]
+                call_row = connection.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(has_request_body), 0), "
+                    "COALESCE(SUM(has_response_body), 0) FROM call_logs"
+                ).fetchone()
+                detail_row = connection.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(CASE WHEN client_request IS NOT NULL "
+                    "OR translated_request IS NOT NULL OR provider_response IS NOT NULL "
+                    "OR client_response IS NOT NULL THEN 1 ELSE 0 END), 0) "
+                    "FROM request_detail_logs"
+                ).fetchone()
+            content_inventory = {
+                "call_logs": int(call_row[0]),
+                "request_body_references": int(call_row[1]),
+                "response_body_references": int(call_row[2]),
+                "detail_logs": int(detail_row[0]),
+                "detail_logs_with_content": int(detail_row[1]),
+            }
+            non_official = sorted(
+                row["provider"]
+                for row in provider_inventory
+                if row["active"] and row["provider"] not in OFFICIAL_OMNIROUTE_PROVIDERS
+            )
+            if non_official:
+                findings.append(
+                    StorageFinding(
+                        "critical",
+                        "NON_OFFICIAL_PROVIDER_ACTIVE",
+                        str(omniroute_db),
+                        "providers=" + ",".join(non_official),
+                    )
+                )
+            if content_inventory["request_body_references"] or content_inventory["response_body_references"]:
+                findings.append(
+                    StorageFinding(
+                        "high",
+                        "MODEL_CONTENT_RETENTION",
+                        str(omniroute_db),
+                        "request_refs=" + str(content_inventory["request_body_references"])
+                        + ",response_refs=" + str(content_inventory["response_body_references"]),
+                    )
+                )
+        except sqlite3.Error as exc:
+            findings.append(StorageFinding("high", "OMNIROUTE_POLICY_UNREADABLE", str(omniroute_db), type(exc).__name__))
+
     age = {
         "codex_sessions": _age_counts(Path.home() / ".codex" / "sessions"),
         "claude_projects": _age_counts(Path.home() / ".claude" / "projects"),
@@ -178,9 +238,83 @@ def audit_storage() -> dict[str, Any]:
         "ok": not any(item.severity in {"critical", "high"} for item in findings),
         "roots": roots,
         "databases": databases,
+        "omniroute_providers": provider_inventory,
+        "omniroute_content": content_inventory,
         "age": age,
         "findings": [asdict(item) for item in findings],
     }
+
+
+def enforce_official_omniroute_providers(*, apply: bool = False) -> dict[str, Any]:
+    """Disable, but never delete, non-official provider connections."""
+
+    path = Path.home() / ".omniroute" / "storage.sqlite"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("OmniRoute database must be a regular file")
+    placeholders = ",".join("?" for _ in OFFICIAL_OMNIROUTE_PROVIDERS)
+    query = (
+        "SELECT id, provider FROM provider_connections WHERE is_active=1 "
+        f"AND provider NOT IN ({placeholders}) ORDER BY provider, id"
+    )
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1.0) as connection:
+        rows = connection.execute(query, tuple(sorted(OFFICIAL_OMNIROUTE_PROVIDERS))).fetchall()
+    providers = sorted({str(row[1]) for row in rows})
+    result: dict[str, Any] = {
+        "dry_run": not apply,
+        "connections": len(rows),
+        "providers": providers,
+        "allowed_providers": sorted(OFFICIAL_OMNIROUTE_PROVIDERS),
+    }
+    if not apply or not rows:
+        return result
+    if _client_running("omniroute"):
+        raise RuntimeError("client is running: omniroute")
+    backup = _private_backup(path)
+    with sqlite3.connect(path, timeout=5.0) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.executemany(
+            "UPDATE provider_connections SET is_active=0, updated_at=datetime('now') "
+            "WHERE id=? AND provider=? AND is_active=1",
+            rows,
+        )
+        connection.commit()
+        if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise RuntimeError(f"post-policy quick_check failed; restore {backup}")
+    result.update({"backup": str(backup), "applied": len(rows)})
+    return result
+
+
+def bound_sqlite_journals(*, apply: bool = False) -> dict[str, Any]:
+    """Set the 64 MiB journal bound only while each owning client is stopped."""
+
+    rows: list[dict[str, Any]] = []
+    for path, client in SQLITE_TARGETS:
+        if path.is_symlink() or not path.is_file():
+            continue
+        before = _sqlite_info(path)
+        row: dict[str, Any] = {
+            "path": str(path),
+            "client": client,
+            "before": before["journal_size_limit"],
+            "status": "BOUNDED" if before["journal_size_limit"] == 67_108_864 else "WOULD_BOUND",
+        }
+        if apply and before["journal_size_limit"] != 67_108_864:
+            try:
+                running = _client_running(client)
+            except RuntimeError:
+                running = True
+                row["status"] = "SKIPPED_PROCESS_VISIBILITY_RESTRICTED"
+            if running:
+                if row["status"] != "SKIPPED_PROCESS_VISIBILITY_RESTRICTED":
+                    row["status"] = "SKIPPED_CLIENT_RUNNING"
+            else:
+                backup = _private_backup(path)
+                with sqlite3.connect(path, timeout=5.0) as connection:
+                    connection.execute("PRAGMA journal_size_limit=67108864")
+                after = _sqlite_info(path)
+                row.update({"after": after["journal_size_limit"], "backup": str(backup), "status": "APPLIED"})
+        rows.append(row)
+    return {"dry_run": not apply, "databases": rows}
 
 
 def _iter_private_tree(root: Path) -> Iterable[Path]:
@@ -226,6 +360,12 @@ def apply_private_permissions() -> dict[str, int]:
 
 
 def _client_running(name: str) -> bool:
+    try:
+        init_comm = Path("/proc/1/comm").read_text(encoding="utf-8").strip().lower()
+    except (FileNotFoundError, PermissionError) as exc:
+        raise RuntimeError("process visibility cannot be established") from exc
+    if init_comm not in {"systemd", "init"}:
+        raise RuntimeError("process visibility is restricted; refusing client-state inference")
     own_pid = os.getpid()
     proc = Path("/proc")
     for entry in proc.iterdir():
@@ -298,4 +438,3 @@ def storage_receipt(action: str, payload: dict[str, Any]) -> dict[str, Any]:
         "actor": pwd.getpwuid(os.getuid()).pw_name,
         "payload": payload,
     }
-

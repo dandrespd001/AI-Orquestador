@@ -1,0 +1,40 @@
+schema_version = 1
+repetitions = 30
+warmups = 5
+timeout_seconds = 10
+
+# Synthetic transport benchmark only. Provider coverage remains deliberately
+# unattested, so this receipt can never promote LiteLLM into production.
+[[targets]]
+name = "litellm-1.95.0"
+version = "1.95.0"
+base_url = "http://127.0.0.1:21003"
+official_providers = ["deepseek", "moonshot", "minimax"]
+provider_coverage_attested = false
+custom_provider_code = false
+content_logging = false
+immutable_ref = "ghcr.io/berriai/litellm@sha256:af806882b7a6ced41658db5b6a7e98ed7b9b51d03b935e0417bf1c8552d688af"
+
+[[scenarios]]
+name = "chat-small-c1"
+path = "/v1/chat/completions"
+payload_file = "fixtures/chat-small.json"
+expected_status = 200
+expected_model = "mock-model"
+concurrency = 1
+
+[[scenarios]]
+name = "chat-small-c4"
+path = "/v1/chat/completions"
+payload_file = "fixtures/chat-small.json"
+expected_status = 200
+expected_model = "mock-model"
+concurrency = 4
+
+[[scenarios]]
+name = "tool-call-c16"
+path = "/v1/chat/completions"
+payload_file = "fixtures/tool-call.json"
+expected_status = 200
+expected_model = "mock-model"
+concurrency = 16

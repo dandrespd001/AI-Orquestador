@@ -1,4 +1,6 @@
 .venv/
+.venv-dspy/
+node_modules/
 .state/
 __pycache__/
 *.py[cod]

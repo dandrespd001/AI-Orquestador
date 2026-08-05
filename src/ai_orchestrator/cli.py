@@ -13,6 +13,7 @@ from typing import Any, Sequence
 
 from ai_orchestrator.adapters import AdapterError, execute
 from ai_orchestrator.archive import ArchiveError, create_encrypted_archive
+from ai_orchestrator.benchmark import atomic_private_json, run_gateway_benchmark, select_gateway
 from ai_orchestrator.config import (
     load_models,
     load_profile,
@@ -21,12 +22,16 @@ from ai_orchestrator.config import (
 )
 from ai_orchestrator.evals import run_routing_eval
 from ai_orchestrator.models import ContractError, TaskSpec
+from ai_orchestrator.optimization import prompt_optimization_preflight
+from ai_orchestrator.quality import promptfoo_preflight, run_quality_eval
 from ai_orchestrator.routing import select_route
 from ai_orchestrator.storage import (
     SQLITE_TARGETS,
     apply_private_permissions,
     audit_storage,
+    bound_sqlite_journals,
     compact_sqlite,
+    enforce_official_omniroute_providers,
     storage_receipt,
 )
 from ai_orchestrator.telemetry import TelemetryStore
@@ -141,7 +146,18 @@ def command_storage_maintain(args: argparse.Namespace) -> int:
         actions["compaction"] = compact_sqlite(path, client)
 
     if args.purge_metadata:
-        actions["metadata_purge"] = TelemetryStore().purge_metadata(365)
+        store = TelemetryStore()
+        actions["metadata_purge"] = (
+            store.purge_metadata(args.metadata_retention_days)
+            if args.apply
+            else store.preview_metadata_purge(args.metadata_retention_days)
+        )
+
+    if args.bound_journals:
+        actions["journal_bounds"] = bound_sqlite_journals(apply=args.apply)
+
+    if args.official_providers:
+        actions["official_providers"] = enforce_official_omniroute_providers(apply=args.apply)
 
     receipt = storage_receipt("storage_maintain", actions)
     receipt["post_audit"] = audit_storage()
@@ -165,6 +181,52 @@ def command_eval(args: argparse.Namespace) -> int:
     payload = run_routing_eval(Path(args.suite), args.profile)
     _print(payload)
     return 0 if payload["status"] == "PASSED" else EXIT_POLICY
+
+
+def command_gateway_benchmark(args: argparse.Namespace) -> int:
+    payload = run_gateway_benchmark(Path(args.manifest).resolve())
+    if args.output:
+        atomic_private_json(Path(args.output).expanduser().resolve(), payload)
+    _print(payload)
+    return 0 if payload["status"] == "PASSED" else EXIT_POLICY
+
+
+def command_gateway_select(args: argparse.Namespace) -> int:
+    source = Path(args.receipt).expanduser().resolve()
+    if source.is_symlink() or not source.is_file():
+        raise ContractError("gateway receipt must be a regular JSON file")
+    payload = select_gateway(json.loads(source.read_text(encoding="utf-8")), args.incumbent)
+    if args.output:
+        atomic_private_json(Path(args.output).expanduser().resolve(), payload)
+    _print(payload)
+    return 0
+
+
+def command_quality_preflight(args: argparse.Namespace) -> int:
+    payload = promptfoo_preflight(Path(args.project_root).expanduser().resolve())
+    _print(payload)
+    return 0 if payload["available"] and payload["version_matches"] else EXIT_POLICY
+
+
+def command_quality_eval(args: argparse.Namespace) -> int:
+    payload = run_quality_eval(
+        project_root=Path(args.project_root).expanduser().resolve(),
+        config=Path(args.config).expanduser().resolve(),
+        output=Path(args.output).expanduser().resolve(),
+        timeout_seconds=args.timeout,
+    )
+    _print(payload)
+    return 0 if payload["status"] == "PASSED" else EXIT_POLICY
+
+
+def command_prompt_optimize(args: argparse.Namespace) -> int:
+    payload = prompt_optimization_preflight(
+        Path(args.experiment).expanduser().resolve(),
+        Path(args.baseline).expanduser().resolve(),
+    )
+    atomic_private_json(Path(args.output).expanduser().resolve(), payload)
+    _print(payload)
+    return 0 if payload["status"] == "READY" else EXIT_POLICY
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -198,6 +260,10 @@ def build_parser() -> argparse.ArgumentParser:
     storage_maintain.add_argument("--apply-permissions", action="store_true")
     storage_maintain.add_argument("--compact")
     storage_maintain.add_argument("--purge-metadata", action="store_true")
+    storage_maintain.add_argument("--metadata-retention-days", type=int, default=90)
+    storage_maintain.add_argument("--bound-journals", action="store_true")
+    storage_maintain.add_argument("--official-providers", action="store_true")
+    storage_maintain.add_argument("--apply", action="store_true")
     storage_maintain.set_defaults(func=command_storage_maintain)
     storage_archive = storage_subparsers.add_parser("archive")
     storage_archive.add_argument("--recipient", required=True)
@@ -211,6 +277,34 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--suite", required=True)
     eval_parser.add_argument("--profile", default="default")
     eval_parser.set_defaults(func=command_eval)
+
+    benchmark = subparsers.add_parser("gateway-benchmark")
+    benchmark.add_argument("--manifest", required=True)
+    benchmark.add_argument("--output")
+    benchmark.set_defaults(func=command_gateway_benchmark)
+
+    gateway_select = subparsers.add_parser("gateway-select")
+    gateway_select.add_argument("--receipt", required=True)
+    gateway_select.add_argument("--incumbent", required=True)
+    gateway_select.add_argument("--output")
+    gateway_select.set_defaults(func=command_gateway_select)
+
+    quality_preflight = subparsers.add_parser("quality-preflight")
+    quality_preflight.add_argument("--project-root", default=str(Path(__file__).resolve().parents[2]))
+    quality_preflight.set_defaults(func=command_quality_preflight)
+
+    quality_eval = subparsers.add_parser("quality-eval")
+    quality_eval.add_argument("--project-root", default=str(Path(__file__).resolve().parents[2]))
+    quality_eval.add_argument("--config", required=True)
+    quality_eval.add_argument("--output", required=True)
+    quality_eval.add_argument("--timeout", type=int, default=900)
+    quality_eval.set_defaults(func=command_quality_eval)
+
+    optimize = subparsers.add_parser("prompt-optimize")
+    optimize.add_argument("--experiment", required=True)
+    optimize.add_argument("--baseline", required=True)
+    optimize.add_argument("--output", required=True)
+    optimize.set_defaults(func=command_prompt_optimize)
     return parser
 
 

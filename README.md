@@ -32,3 +32,33 @@ Algoritmic producen `HANDOFF_REQUIRED`.
 Use `storage audit` para inspeccion y `storage maintain` primero sin `--apply`.
 La compactacion nunca opera sobre una base si detecta el cliente activo.
 
+## Calidad, optimizacion y gateways
+
+Promptfoo esta fijado por lockfile y se ejecuta sin credenciales, sin telemetria,
+sin resultados crudos persistentes y dentro de un namespace sin red:
+
+```bash
+.venv/bin/ai-orchestrator quality-preflight --project-root .
+.venv/bin/ai-orchestrator quality-eval --project-root . \
+  --config evals/promptfoo/promptfooconfig.yaml \
+  --output /tmp/ai-orchestrator-$UID/quality.json
+```
+
+DSPy es optativo y solo admite experimentos de `tests`, `docs` y `review`, con
+un baseline verde, dataset separado y presupuesto maximo de 40 llamadas. El
+comando actual es un gate de admision: no llama modelos ni optimiza en vivo.
+
+```bash
+.venv-dspy/bin/ai-orchestrator prompt-optimize \
+  --experiment evals/dspy/tests-v1.toml \
+  --baseline /tmp/ai-orchestrator-$UID/quality.json \
+  --output /tmp/ai-orchestrator-$UID/dspy-preflight.json
+```
+
+LiteLLM y Bifrost son candidatos de laboratorio, no dependencias de produccion.
+Los manifiestos exigen imagen/version inmutable, loopback, logging de contenido
+desactivado y atestacion real de DeepSeek/Kimi/MiniMax. Un benchmark simulado
+nunca puede promover un gateway.
+
+Consulte [la evaluacion del stack](docs/tool-evaluation-2026-08-05.md) para los
+resultados medidos, bloqueos y siguiente paso.

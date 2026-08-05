@@ -1,0 +1,13 @@
+description: AI-Orchestrator deterministic local harness smoke suite
+sharing: false
+providers:
+  - id: file://mock_provider.py
+    label: deterministic-local-mock
+    config:
+      pythonExecutable: /usr/bin/python3
+prompts:
+  - "{{input}}"
+tests: file://golden.jsonl
+evaluateOptions:
+  cache: false
+  write: false

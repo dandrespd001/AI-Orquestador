@@ -1,0 +1,40 @@
+{"case_id":"t01","input":"Write a boundary test for an empty sequence.","expected":"Includes the empty sequence and a deterministic assertion."}
+{"case_id":"t02","input":"Write a boundary test for a one-item sequence.","expected":"Includes exactly one item and checks the result."}
+{"case_id":"t03","input":"Test rejection of an absolute path.","expected":"Uses an absolute path and asserts rejection."}
+{"case_id":"t04","input":"Test rejection of a parent traversal path.","expected":"Uses a path containing dot-dot and asserts rejection."}
+{"case_id":"t05","input":"Test rejection of a symlink input.","expected":"Creates a symlink and asserts fail-closed behavior."}
+{"case_id":"t06","input":"Test duplicate identifiers.","expected":"Supplies duplicate identifiers and asserts rejection."}
+{"case_id":"t07","input":"Test an invalid schema version.","expected":"Uses an unsupported version and asserts rejection."}
+{"case_id":"t08","input":"Test a missing required field.","expected":"Omits one required field and asserts rejection."}
+{"case_id":"t09","input":"Test a timeout lower bound.","expected":"Uses a non-positive timeout and asserts rejection."}
+{"case_id":"t10","input":"Test a timeout upper bound.","expected":"Uses an excessive timeout and asserts rejection."}
+{"case_id":"t11","input":"Test a concurrency lower bound.","expected":"Uses zero concurrency and asserts rejection."}
+{"case_id":"t12","input":"Test a concurrency upper bound.","expected":"Uses excessive concurrency and asserts rejection."}
+{"case_id":"t13","input":"Test exact model provenance.","expected":"Checks requested and reported model equality."}
+{"case_id":"t14","input":"Test missing model provenance.","expected":"Omits the reported model and asserts fail-closed behavior."}
+{"case_id":"t15","input":"Test a mismatched model response.","expected":"Reports another model and asserts rejection."}
+{"case_id":"t16","input":"Test a successful JSON contract.","expected":"Provides valid JSON and checks its schema."}
+{"case_id":"t17","input":"Test malformed JSON output.","expected":"Provides malformed JSON and asserts rejection."}
+{"case_id":"t18","input":"Test a successful unified diff.","expected":"Provides a scoped diff and checks accepted paths."}
+{"case_id":"t19","input":"Test a diff that escapes scope.","expected":"Changes an unapproved path and asserts rejection."}
+{"case_id":"t20","input":"Test a binary diff.","expected":"Provides binary patch metadata and asserts rejection."}
+{"case_id":"t21","input":"Test removal of a safety check.","expected":"Weakens a safety guard and asserts rejection."}
+{"case_id":"t22","input":"Test preservation of a false live flag.","expected":"Checks that the live flag remains false."}
+{"case_id":"t23","input":"Test an unavailable quota.","expected":"Reports quota unavailable without fallback."}
+{"case_id":"t24","input":"Test an authentication failure.","expected":"Reports authentication failure without retrying."}
+{"case_id":"t25","input":"Test a 429 before response bytes.","expected":"Performs at most the configured attempts."}
+{"case_id":"t26","input":"Test a 500 before response bytes.","expected":"Performs at most the configured attempts."}
+{"case_id":"t27","input":"Test a stream cut after first byte.","expected":"Does not replay an ambiguous streamed request."}
+{"case_id":"t28","input":"Test a wall timeout after dispatch.","expected":"Returns an ambiguous timeout without fallback."}
+{"case_id":"t29","input":"Test that unrelated secrets are not inherited.","expected":"Asserts secret environment names are absent."}
+{"case_id":"t30","input":"Test that output is not written into the repository.","expected":"Uses a repository output path and asserts rejection."}
+{"case_id":"t31","input":"Test private output permissions.","expected":"Checks mode 0600 on the result file."}
+{"case_id":"t32","input":"Test private state directory permissions.","expected":"Checks mode 0700 on the state directory."}
+{"case_id":"t33","input":"Test an unbounded SQLite journal finding.","expected":"Detects journal_size_limit minus one."}
+{"case_id":"t34","input":"Test a corrupt SQLite database.","expected":"Reports a failed integrity check."}
+{"case_id":"t35","input":"Test an active non-official provider.","expected":"Detects and rejects the provider."}
+{"case_id":"t36","input":"Test disabled non-official providers.","expected":"Does not route to disabled connections."}
+{"case_id":"t37","input":"Test retained request bodies.","expected":"Detects body references without including content."}
+{"case_id":"t38","input":"Test metadata-only telemetry.","expected":"Stores hashes and metrics but no body fields."}
+{"case_id":"t39","input":"Test deterministic repeated evaluation.","expected":"Produces the same score for the same fixture."}
+{"case_id":"t40","input":"Test held-out evaluation isolation.","expected":"Keeps held-out examples out of optimizer inputs."}

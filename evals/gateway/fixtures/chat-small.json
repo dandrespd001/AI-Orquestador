@@ -1,0 +1,7 @@
+{
+  "model": "mock-model",
+  "messages": [
+    {"role": "user", "content": "Reply with exactly: gateway-ok"}
+  ],
+  "temperature": 0
+}

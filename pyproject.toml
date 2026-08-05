@@ -14,6 +14,9 @@ eval = [
   "inspect-ai>=0.3,<1",
   "mlflow>=3,<4",
 ]
+optimize = [
+  "dspy==3.3.0",
+]
 
 [project.scripts]
 ai-orchestrator = "ai_orchestrator.cli:main"
@@ -24,4 +27,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

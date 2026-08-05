@@ -1,0 +1,36 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "version": 2,
+  "providers": {
+    "mock": {
+      "keys": [
+        {
+          "name": "benchmark-key",
+          "value": "benchmark-not-a-secret",
+          "models": ["*"],
+          "weight": 1.0
+        }
+      ],
+      "network_config": {
+        "base_url": "http://aio-mock:8000",
+        "default_request_timeout_in_seconds": 10,
+        "max_retries": 0
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "chat_completion": true,
+          "chat_completion_stream": true,
+          "responses": true,
+          "responses_stream": true
+        }
+      }
+    }
+  },
+  "client": {
+    "enable_logging": false,
+    "disable_content_logging": true,
+    "drop_excess_requests": false,
+    "initial_pool_size": 32
+  }
+}

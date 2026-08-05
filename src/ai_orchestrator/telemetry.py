@@ -192,9 +192,8 @@ class TelemetryStore:
         }
 
     def purge_metadata(self, retention_days: int = 365) -> dict[str, int]:
-        if retention_days < 30:
-            raise ValueError("metadata retention must be at least 30 days")
-        cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
+        preview = self.preview_metadata_purge(retention_days)
+        cutoff = preview["cutoff"]
         with self._connect() as connection:
             deleted_runs = connection.execute(
                 "DELETE FROM runs WHERE finished_at < ?", (cutoff,)
@@ -211,3 +210,20 @@ class TelemetryStore:
             connection.execute("PRAGMA optimize")
         return {"runs": deleted_runs, "routes": deleted_routes}
 
+    def preview_metadata_purge(self, retention_days: int = 365) -> dict[str, Any]:
+        if retention_days < 30:
+            raise ValueError("metadata retention must be at least 30 days")
+        cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
+        with self._connect() as connection:
+            runs = connection.execute(
+                "SELECT COUNT(*) FROM runs WHERE finished_at < ?", (cutoff,)
+            ).fetchone()[0]
+            routes = connection.execute(
+                """
+                SELECT COUNT(*) FROM route_decisions
+                WHERE created_at < ?
+                  AND decision_id NOT IN (SELECT decision_id FROM runs)
+                """,
+                (cutoff,),
+            ).fetchone()[0]
+        return {"runs": int(runs), "routes": int(routes), "cutoff": cutoff, "dry_run": True}

@@ -1,0 +1,25 @@
+{
+  "model": "mock-model",
+  "messages": [
+    {"role": "user", "content": "Call sum_values with a=2 and b=3"}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "sum_values",
+        "description": "Add two integers",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "a": {"type": "integer"},
+            "b": {"type": "integer"}
+          },
+          "required": ["a", "b"],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "tool_choice": "required"
+}

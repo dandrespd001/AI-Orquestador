@@ -1,0 +1,70 @@
+schema_version = 1
+repetitions = 30
+warmups = 5
+timeout_seconds = 10
+
+# Start each pinned candidate separately on these loopback ports. The harness
+# intentionally cannot start containers or reach non-loopback endpoints.
+[[targets]]
+name = "omniroute-3.8.48"
+version = "3.8.48"
+base_url = "http://127.0.0.1:21001"
+official_providers = ["deepseek", "moonshot", "minimax"]
+provider_coverage_attested = true
+custom_provider_code = false
+content_logging = false
+immutable_ref = "npm:omniroute@3.8.48#REPLACE_WITH_INTEGRITY_SHA512"
+
+[[targets]]
+name = "omniroute-3.8.49"
+version = "3.8.49"
+base_url = "http://127.0.0.1:21002"
+official_providers = ["deepseek", "moonshot", "minimax"]
+provider_coverage_attested = false
+custom_provider_code = false
+content_logging = false
+immutable_ref = "npm:omniroute@3.8.49#REPLACE_WITH_INTEGRITY_SHA512"
+
+[[targets]]
+name = "litellm-1.95.0"
+version = "1.95.0"
+base_url = "http://127.0.0.1:21003"
+official_providers = ["deepseek", "moonshot", "minimax"]
+provider_coverage_attested = false
+custom_provider_code = false
+content_logging = false
+immutable_ref = "ghcr.io/berriai/litellm@sha256:REPLACE_WITH_VERIFIED_DIGEST"
+
+[[targets]]
+name = "bifrost-http-1.6.8"
+version = "1.6.8"
+base_url = "http://127.0.0.1:21004"
+official_providers = ["deepseek"]
+provider_coverage_attested = false
+custom_provider_code = false
+content_logging = false
+immutable_ref = "maximhq/bifrost@sha256:REPLACE_WITH_VERIFIED_DIGEST"
+
+[[scenarios]]
+name = "chat-small-c1"
+path = "/v1/chat/completions"
+payload_file = "fixtures/chat-small.json"
+expected_status = 200
+expected_model = "mock-model"
+concurrency = 1
+
+[[scenarios]]
+name = "chat-small-c4"
+path = "/v1/chat/completions"
+payload_file = "fixtures/chat-small.json"
+expected_status = 200
+expected_model = "mock-model"
+concurrency = 4
+
+[[scenarios]]
+name = "tool-call-c16"
+path = "/v1/chat/completions"
+payload_file = "fixtures/tool-call.json"
+expected_status = 200
+expected_model = "mock-model"
+concurrency = 16

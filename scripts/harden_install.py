@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
 import sqlite3
 import stat
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
@@ -16,7 +16,7 @@ SOURCE = Path(__file__).resolve().parents[1]
 STATE_ROOT = HOME / ".local" / "share" / "ai-orchestrator"
 CONFIG_ROOT = HOME / ".config" / "ai-orchestrator"
 BACKUP_ROOT = STATE_ROOT / "backups" / time.strftime("pre-hardening-%Y%m%dT%H%M%SZ", time.gmtime())
-OFFICIAL_OMNIROUTE_PROVIDERS = {"deepseek", "kimi-coding", "minimax"}
+OFFICIAL_OMNIROUTE_PROVIDERS = {"deepseek", "kimi-coding", "moonshot", "minimax"}
 
 
 def private_dir(path: Path) -> None:
@@ -57,29 +57,23 @@ def encrypt_credentials(values: dict[str, str]) -> list[str]:
     }
     installed: list[str] = []
     for source_name, credential_name in names.items():
-        with tempfile.NamedTemporaryFile(prefix="ai-orchestrator-credential-", dir="/tmp", delete=False) as handle:
-            temporary = Path(handle.name)
-            os.chmod(temporary, 0o600)
-            handle.write(values[source_name].encode("utf-8"))
         destination = credentials / f"{credential_name}.cred"
-        try:
-            subprocess.run(
-                [
-                    "systemd-creds", "encrypt", "--user", "--with-key=host",
-                    f"--name={credential_name}", str(temporary), str(destination),
-                ],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            destination.chmod(0o600)
-            installed.append(credential_name)
-        finally:
-            temporary.unlink(missing_ok=True)
+        subprocess.run(
+            [
+                "systemd-creds", "encrypt", "--user", "--with-key=host",
+                f"--name={credential_name}", "-", str(destination),
+            ],
+            input=values[source_name].encode("utf-8"),
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        destination.chmod(0o600)
+        installed.append(credential_name)
     return installed
 
 
-def harden_omniroute_database(path: Path) -> dict[str, object]:
+def harden_omniroute_database(path: Path, *, apply_provider_policy: bool) -> dict[str, object]:
     backup(path)
     backup(path.with_name(path.name + "-wal"))
     backup(path.with_name(path.name + "-shm"))
@@ -97,12 +91,14 @@ def harden_omniroute_database(path: Path) -> dict[str, object]:
                 "ON CONFLICT(namespace,key) DO UPDATE SET value=excluded.value",
                 (namespace, key, value),
             )
-        placeholders = ",".join("?" for _ in OFFICIAL_OMNIROUTE_PROVIDERS)
-        cursor = connection.execute(
-            f"UPDATE provider_connections SET is_active=0 WHERE provider NOT IN ({placeholders}) AND is_active<>0",
-            tuple(sorted(OFFICIAL_OMNIROUTE_PROVIDERS)),
-        )
-        disabled = cursor.rowcount
+        disabled = 0
+        if apply_provider_policy:
+            placeholders = ",".join("?" for _ in OFFICIAL_OMNIROUTE_PROVIDERS)
+            cursor = connection.execute(
+                f"UPDATE provider_connections SET is_active=0 WHERE provider NOT IN ({placeholders}) AND is_active<>0",
+                tuple(sorted(OFFICIAL_OMNIROUTE_PROVIDERS)),
+            )
+            disabled = cursor.rowcount
         connection.commit()
         integrity = connection.execute("PRAGMA quick_check").fetchone()[0]
     if integrity != "ok":
@@ -171,15 +167,41 @@ def harden_modes() -> dict[str, int]:
     return {"changed": changed}
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--apply-provider-policy", action="store_true")
+    args = parser.parse_args(argv)
+    if args.apply_provider_policy and not args.apply:
+        raise RuntimeError("--apply-provider-policy requires --apply")
+    environment_path = HOME / ".omniroute" / ".env"
+    values = parse_env(environment_path)
+    if not args.apply:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "status": "DRY_RUN",
+                    "credential_names": sorted(values),
+                    "provider_policy_requested": args.apply_provider_policy,
+                    "plaintext_values_exposed": False,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
     private_dir(STATE_ROOT)
     private_dir(BACKUP_ROOT)
-    environment_path = HOME / ".omniroute" / ".env"
+    init_comm = Path("/proc/1/comm").read_text(encoding="utf-8").strip().lower()
+    if init_comm not in {"systemd", "init"}:
+        raise RuntimeError("process visibility is restricted; run hardening from the host user session")
     backup(environment_path)
-    values = parse_env(environment_path)
     install_files()
     credentials = encrypt_credentials(values)
-    database = harden_omniroute_database(HOME / ".omniroute" / "storage.sqlite")
+    database = harden_omniroute_database(
+        HOME / ".omniroute" / "storage.sqlite",
+        apply_provider_policy=args.apply_provider_policy,
+    )
     modes = harden_modes()
     receipt = {
         "schema_version": 1,

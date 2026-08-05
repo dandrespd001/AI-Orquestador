@@ -1,0 +1,12 @@
+schema_version = 1
+engine = "dspy"
+engine_version = "3.3.0"
+role = "tests"
+optimizer = "BootstrapFewShot"
+dataset = "tests-v1.jsonl"
+max_calls = 40
+max_labeled_demos = 4
+max_bootstrapped_demos = 4
+train_fraction = 0.6
+validation_fraction = 0.2
+test_fraction = 0.2

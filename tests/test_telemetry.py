@@ -95,6 +95,29 @@ class TelemetryTests(unittest.TestCase):
             }
         self.assertFalse({"prompt", "response", "reasoning", "content"} & columns)
 
+    def test_metadata_purge_preview_never_deletes(self) -> None:
+        store = TelemetryStore()
+        with store._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO route_decisions (
+                    decision_id, task_id, created_at, repo_hash, profile,
+                    task_type, sensitivity, context_sha256, selected_model,
+                    provider, transport, reviewer_model, status, auto_execute,
+                    reason_code
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "old-route", "old-task", "2020-01-01T00:00:00+00:00", "a" * 64,
+                    "default", "tests", "internal", "b" * 64, "deepseek-v4-flash",
+                    "deepseek", "omniroute", None, "READY", 1, "eligible",
+                ),
+            )
+        preview = store.preview_metadata_purge(90)
+        self.assertEqual(1, preview["routes"])
+        self.assertTrue(preview["dry_run"])
+        self.assertEqual(1, store.report()["route_count"])
+
 
 if __name__ == "__main__":
     unittest.main()
