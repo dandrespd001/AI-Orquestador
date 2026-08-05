@@ -64,6 +64,12 @@ def _command(decision: RouteDecision, prompt_path: Path) -> list[str]:
             "--tools",
             "",
         ]
+    if decision.transport == "minimax_official_cli":
+        return [
+            "opencode", "run", "--pure", "--title", "ai-orchestrator-minimax-readonly",
+            "--agent", "auditor", "-m",
+            str(decision.requested_route_model),
+        ]
     if decision.transport == "omniroute":
         return [
             "omniroute",
@@ -99,7 +105,7 @@ def _find_reported_model(payload: Any) -> str | None:
 
 
 def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None, bool]:
-    if decision.transport in {"codex_cli", "claude_cli"}:
+    if decision.transport in {"codex_cli", "claude_cli", "minimax_official_cli"}:
         # Native clients receive an exact model argv and own their authenticated
         # connection. The argv is the provenance boundary for those transports.
         return decision.selected_model, True
@@ -211,4 +217,3 @@ def execute(
         error_code=error_code,
     )
     return result, stdout
-

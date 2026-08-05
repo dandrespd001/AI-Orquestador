@@ -64,11 +64,11 @@ max_concurrency = 3
 id = "MiniMax-M3"
 family = "minimax"
 provider = "minimax"
-transport = "omniroute"
+transport = "minimax_official_cli"
 route_model = "minimax/MiniMax-M3"
 official = true
-status = "key_rotation_required"
-roles = ["long_context", "implementation", "docs"]
+status = "available"
+roles = ["long_context", "docs"]
 max_sensitivity = "internal"
 max_concurrency = 1
 
@@ -83,4 +83,3 @@ status = "quota_unavailable"
 roles = ["long_context", "research", "implementation"]
 max_sensitivity = "internal"
 max_concurrency = 1
-

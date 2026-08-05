@@ -41,6 +41,11 @@ SQLITE_TARGETS = (
 )
 
 OFFICIAL_OMNIROUTE_PROVIDERS = frozenset({"deepseek", "kimi-coding", "moonshot", "minimax"})
+OMNIROUTE_PRIVATE_LOG_SETTINGS = {
+    ("databaseSettings", "detailedLogsEnabled"): "false",
+    ("databaseSettings", "callLogPipelineEnabled"): "false",
+    ("settings", "call_log_pipeline_enabled"): "0",
+}
 
 
 def _mode(path: Path) -> int:
@@ -281,6 +286,53 @@ def enforce_official_omniroute_providers(*, apply: bool = False) -> dict[str, An
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise RuntimeError(f"post-policy quick_check failed; restore {backup}")
     result.update({"backup": str(backup), "applied": len(rows)})
+    return result
+
+
+def disable_omniroute_content_logging(
+    *, apply: bool = False, path: Path | None = None
+) -> dict[str, Any]:
+    """Disable future body-bearing call logs without deleting historical evidence."""
+
+    database = path or (Path.home() / ".omniroute" / "storage.sqlite")
+    if database.is_symlink() or not database.is_file():
+        raise ValueError("OmniRoute database must be a regular file")
+
+    def read_settings(connection: sqlite3.Connection) -> dict[str, str | None]:
+        result: dict[str, str | None] = {}
+        for (namespace, key), _desired in OMNIROUTE_PRIVATE_LOG_SETTINGS.items():
+            row = connection.execute(
+                "SELECT value FROM key_value WHERE namespace=? AND key=?", (namespace, key)
+            ).fetchone()
+            result[f"{namespace}.{key}"] = str(row[0]) if row else None
+        return result
+
+    with sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=2.0) as connection:
+        before = read_settings(connection)
+    desired = {
+        f"{namespace}.{key}": value
+        for (namespace, key), value in OMNIROUTE_PRIVATE_LOG_SETTINGS.items()
+    }
+    result: dict[str, Any] = {"dry_run": not apply, "before": before, "desired": desired}
+    if not apply or before == desired:
+        return result
+
+    backup = _private_backup(database)
+    with sqlite3.connect(database, timeout=5.0) as connection:
+        connection.execute("PRAGMA busy_timeout=5000")
+        connection.execute("BEGIN IMMEDIATE")
+        for (namespace, key), value in OMNIROUTE_PRIVATE_LOG_SETTINGS.items():
+            connection.execute(
+                "INSERT INTO key_value(namespace,key,value) VALUES(?,?,?) "
+                "ON CONFLICT(namespace,key) DO UPDATE SET value=excluded.value",
+                (namespace, key, value),
+            )
+        connection.commit()
+        after = read_settings(connection)
+        integrity = connection.execute("PRAGMA quick_check").fetchone()[0]
+    if after != desired or integrity != "ok":
+        raise RuntimeError(f"post-logging-policy verification failed; restore {backup}")
+    result.update({"backup": str(backup), "after": after, "quick_check": integrity})
     return result
 
 

@@ -58,6 +58,19 @@ class AdapterTests(unittest.TestCase):
         self.assertIn("--model", command)
         self.assertNotIn("sh", command)
 
+    def test_minimax_official_transport_is_read_only_auditor(self) -> None:
+        decision = self.decision(
+            selected_model="MiniMax-M3",
+            requested_route_model="minimax/MiniMax-M3",
+            provider="minimax",
+            family="minimax",
+            transport="minimax_official_cli",
+        )
+        command = _command(decision, self.task.prompt_path())
+        self.assertEqual("opencode", command[0])
+        self.assertIn("auditor", command)
+        self.assertNotIn("delegado", command)
+
     def test_environment_does_not_forward_unrelated_tokens(self) -> None:
         with patch.dict(
             os.environ,
@@ -78,4 +91,3 @@ class AdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

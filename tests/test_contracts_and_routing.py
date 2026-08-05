@@ -72,15 +72,15 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertFalse(decision.auto_execute)
         self.assertEqual("HANDOFF_REQUIRED", decision.status)
 
-    def test_unavailable_long_context_models_fall_back_explicitly_to_claude(self) -> None:
+    def test_long_context_uses_read_only_official_minimax(self) -> None:
         decision = select_route(
             self.task(task_type="long_context"),
             load_models(),
             load_roles(),
             load_profile("default"),
         )
-        self.assertEqual("claude-opus", decision.selected_model)
-        self.assertEqual("key_rotation_required", decision.unavailable["MiniMax-M3"])
+        self.assertEqual("MiniMax-M3", decision.selected_model)
+        self.assertEqual("minimax_official_cli", decision.transport)
         self.assertEqual("quota_unavailable", decision.unavailable["kimi-official"])
 
     def test_algoritmic_minimax_is_a_supervised_handoff_when_available(self) -> None:

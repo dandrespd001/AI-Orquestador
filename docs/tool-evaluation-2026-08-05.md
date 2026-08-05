@@ -78,3 +78,42 @@ conexiones durante esta implementacion.
 GPT y Claude siguen por sus CLI oficiales (`codex` y `claude`). Los gateways se
 limitan a Kimi/MiniMax/DeepSeek con suscripciones oficiales. Ningun fallback de
 pago por uso ni proveedor tercero queda autorizado.
+
+## Ejecucion de la fase siguiente
+
+El gate `provider-canary` se implemento y ejecuto el 2026-08-05 mediante los
+clientes autenticados existentes, sin copiar claves entre almacenes:
+
+| proveedor | ruta observada | resultado | latencia del canario |
+|---|---|---:|---:|
+| DeepSeek V4 Flash | OmniRoute 3.8.48, CLI oficial local | PASSED | 1.575 ms |
+| MiniMax M3 | OpenCode, proveedor `minimax` oficial | PASSED | 4.111 ms |
+| Kimi | Kimi Code CLI oficial | QUOTA_UNAVAILABLE | 3.361 ms |
+
+Estado agregado: `DEGRADED_QUOTA`. Kimi no tiene fallback y debe reintentarse
+cuando se renueve la cuota. MiniMax queda disponible para `docs` y
+`long_context` mediante agente `auditor` read-only; se retiro de
+`implementation`. El perfil Algoritmic conserva obligatoriamente
+`delegate-minimax-api` y sus gates propios.
+
+Se activo el modo no-log de la clave de despliegue OmniRoute (`env-key`) y se
+reinicio el gateway. Los tres canarios DeepSeek posteriores verifican
+`has_request_body=0`, `has_response_body=0` y `detail_state=none`. La variable
+no secreta queda tanto en el wrapper endurecido como en Fish para futuros
+arranques. Los 1.324 registros historicos —1.286 con request y 1.172 con
+response— no se borraron; siguen siendo evidencia sensible pendiente de una
+politica de saneamiento aprobada.
+
+La prueba real LiteLLM/Bifrost no puede reutilizar claves extraidas de bases de
+datos o configuraciones de otros clientes. La plataforma rechazo correctamente
+esa operacion. Queda pendiente provisionar claves de laboratorio dedicadas por
+las interfaces oficiales; hasta entonces ambos siguen en `NO_PROMOTION`.
+
+La copia MiniMax en texto plano se retiro de `config.fish`; `claude-minimax`
+ahora llama el proveedor oficial read-only de OpenCode con `--pure` y titulo
+explicito. La prueba confirmo que el canario MiniMax no modifica el conteo de
+logs OmniRoute. El escaneo encontro una
+copia activa en el almacen privado de autenticacion y referencias `sk-cp-` en
+121 archivos historicos de sesiones Claude/Codex. Como la clave aparecio en
+transcripciones, debe rotarse en la plataforma MiniMax antes de sanear esos
+archivos; no se borraron historiales automaticamente.

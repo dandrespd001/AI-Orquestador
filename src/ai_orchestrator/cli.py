@@ -14,6 +14,7 @@ from typing import Any, Sequence
 from ai_orchestrator.adapters import AdapterError, execute
 from ai_orchestrator.archive import ArchiveError, create_encrypted_archive
 from ai_orchestrator.benchmark import atomic_private_json, run_gateway_benchmark, select_gateway
+from ai_orchestrator.canary import ROUTES, run_official_canaries
 from ai_orchestrator.config import (
     load_models,
     load_profile,
@@ -32,6 +33,7 @@ from ai_orchestrator.storage import (
     bound_sqlite_journals,
     compact_sqlite,
     enforce_official_omniroute_providers,
+    disable_omniroute_content_logging,
     storage_receipt,
 )
 from ai_orchestrator.telemetry import TelemetryStore
@@ -57,7 +59,7 @@ def _route(spec_path: str, profile_name: str, *, record: bool) -> tuple[TaskSpec
 
 
 def _local_health() -> dict[str, object]:
-    request = urllib.request.Request("http://127.0.0.1:20128/health", method="GET")
+    request = urllib.request.Request("http://127.0.0.1:20128/v1/models", method="GET")
     try:
         with urllib.request.urlopen(request, timeout=1.5) as response:
             return {"reachable": True, "status": response.status}
@@ -159,6 +161,9 @@ def command_storage_maintain(args: argparse.Namespace) -> int:
     if args.official_providers:
         actions["official_providers"] = enforce_official_omniroute_providers(apply=args.apply)
 
+    if args.disable_content_logs:
+        actions["content_logging"] = disable_omniroute_content_logging(apply=args.apply)
+
     receipt = storage_receipt("storage_maintain", actions)
     receipt["post_audit"] = audit_storage()
     _print(receipt)
@@ -189,6 +194,14 @@ def command_gateway_benchmark(args: argparse.Namespace) -> int:
         atomic_private_json(Path(args.output).expanduser().resolve(), payload)
     _print(payload)
     return 0 if payload["status"] == "PASSED" else EXIT_POLICY
+
+
+def command_provider_canary(args: argparse.Namespace) -> int:
+    payload = run_official_canaries(args.provider, timeout_seconds=args.timeout)
+    if args.output:
+        atomic_private_json(Path(args.output).expanduser().resolve(), payload)
+    _print(payload)
+    return 0 if payload["status"] in {"PASSED", "DEGRADED_QUOTA"} else EXIT_RUNTIME
 
 
 def command_gateway_select(args: argparse.Namespace) -> int:
@@ -263,6 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     storage_maintain.add_argument("--metadata-retention-days", type=int, default=90)
     storage_maintain.add_argument("--bound-journals", action="store_true")
     storage_maintain.add_argument("--official-providers", action="store_true")
+    storage_maintain.add_argument("--disable-content-logs", action="store_true")
     storage_maintain.add_argument("--apply", action="store_true")
     storage_maintain.set_defaults(func=command_storage_maintain)
     storage_archive = storage_subparsers.add_parser("archive")
@@ -277,6 +291,12 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--suite", required=True)
     eval_parser.add_argument("--profile", default="default")
     eval_parser.set_defaults(func=command_eval)
+
+    provider_canary = subparsers.add_parser("provider-canary")
+    provider_canary.add_argument("--provider", action="append", choices=sorted(ROUTES))
+    provider_canary.add_argument("--timeout", type=int, default=120)
+    provider_canary.add_argument("--output")
+    provider_canary.set_defaults(func=command_provider_canary)
 
     benchmark = subparsers.add_parser("gateway-benchmark")
     benchmark.add_argument("--manifest", required=True)

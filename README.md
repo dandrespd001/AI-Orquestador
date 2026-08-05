@@ -60,5 +60,16 @@ Los manifiestos exigen imagen/version inmutable, loopback, logging de contenido
 desactivado y atestacion real de DeepSeek/Kimi/MiniMax. Un benchmark simulado
 nunca puede promover un gateway.
 
+Los proveedores oficiales provisionados se comprueban sin conservar respuestas:
+
+```bash
+.venv/bin/ai-orchestrator provider-canary \
+  --output /tmp/ai-orchestrator-$UID/official-providers.json
+```
+
+DeepSeek usa el CLI autenticado de OmniRoute con `env-key` en modo no-log;
+MiniMax usa el proveedor oficial de OpenCode en agente `auditor`; Kimi usa su
+CLI oficial y reporta `QUOTA_UNAVAILABLE` sin fallback cuando termina la cuota.
+
 Consulte [la evaluacion del stack](docs/tool-evaluation-2026-08-05.md) para los
 resultados medidos, bloqueos y siguiente paso.

@@ -43,6 +43,10 @@ def main() -> int:
         "OMNIROUTE_API_KEY": api_key,
         "STORAGE_ENCRYPTION_KEY": storage_key,
         "OMNIROUTE_HOST": "127.0.0.1",
+        # OmniRoute identifies its deployment credential as ``env-key``.
+        # Marking it no-log preserves aggregate usage while preventing prompt
+        # and response bodies from being written to call-log artifacts.
+        "NO_LOG_API_KEY_IDS": "env-key",
     }
     argv = [
         str(resolved_executable),
@@ -56,4 +60,3 @@ def main() -> int:
     ]
     os.execve(resolved_executable, argv, environment)
     return 127
-
