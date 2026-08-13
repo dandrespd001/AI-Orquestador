@@ -43,7 +43,7 @@ class TelemetryTests(unittest.TestCase):
             profile="default",
             status="READY",
             selected_model="deepseek-v4-flash",
-            requested_route_model="deepseek/deepseek-v4-flash",
+            requested_route_model="ds/deepseek-v4-flash",
             provider="deepseek",
             family="deepseek",
             transport="omniroute",

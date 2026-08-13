@@ -19,6 +19,16 @@ SENSITIVITY_ORDER = {
 }
 
 ALLOWED_OUTPUT_CONTRACTS = {"text", "json", "unified_diff", "review"}
+ALLOWED_WRITE_MODES = {"read_only", "validated_patch", "validated_apply"}
+ALLOWED_TRUST_TIERS = {"official_subscription", "local", "web_free"}
+ALLOWED_EXECUTION_PROFILES = {
+    "native_writer",
+    "patch_api_writer",
+    "kimi_acp_writer",
+    "read_only",
+}
+ALLOWED_MODEL_CAPABILITIES = {"read", "write", "tools"}
+ALLOWED_REASONING_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 
 
 class ContractError(ValueError):
@@ -52,6 +62,12 @@ class TaskSpec:
     max_context_tokens: int = 120_000
     timeout_seconds: int = 900
     allow_parallel: bool = False
+    write_mode: str = "read_only"
+    allowed_write_paths: tuple[str, ...] = ()
+    gate_profile: str = "profile"
+    max_repairs: int = 2
+    max_changed_files: int = 40
+    max_patch_bytes: int = 1_048_576
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any]) -> "TaskSpec":
@@ -109,6 +125,31 @@ class TaskSpec:
         if not 1 <= timeout_seconds <= 1800:
             raise ContractError("timeout_seconds must be between 1 and 1800")
 
+        write_mode = str(payload.get("write_mode", "read_only")).strip()
+        if write_mode not in ALLOWED_WRITE_MODES:
+            raise ContractError(f"unknown write_mode: {write_mode!r}")
+        allowed_write_paths = tuple(
+            _clean_relative_path(value, "allowed_write_paths")
+            for value in payload.get("allowed_write_paths", ())
+        )
+        if write_mode != "read_only" and not allowed_write_paths:
+            raise ContractError("write tasks require allowed_write_paths")
+        if write_mode == "read_only" and allowed_write_paths:
+            raise ContractError("read_only tasks must not declare allowed_write_paths")
+
+        gate_profile = str(payload.get("gate_profile", "profile")).strip()
+        if not gate_profile or any(value in gate_profile for value in ("/", "\\", "..")):
+            raise ContractError("gate_profile must be a simple profile name")
+        max_repairs = int(payload.get("max_repairs", 2))
+        if not 0 <= max_repairs <= 3:
+            raise ContractError("max_repairs must be between 0 and 3")
+        max_changed_files = int(payload.get("max_changed_files", 40))
+        if not 1 <= max_changed_files <= 500:
+            raise ContractError("max_changed_files must be between 1 and 500")
+        max_patch_bytes = int(payload.get("max_patch_bytes", 1_048_576))
+        if not 1_024 <= max_patch_bytes <= 20_971_520:
+            raise ContractError("max_patch_bytes must be between 1024 and 20971520")
+
         return cls(
             task_id=task_id,
             repo=str(repo),
@@ -120,6 +161,12 @@ class TaskSpec:
             max_context_tokens=max_context_tokens,
             timeout_seconds=timeout_seconds,
             allow_parallel=bool(payload.get("allow_parallel", False)),
+            write_mode=write_mode,
+            allowed_write_paths=allowed_write_paths,
+            gate_profile=gate_profile,
+            max_repairs=max_repairs,
+            max_changed_files=max_changed_files,
+            max_patch_bytes=max_patch_bytes,
         )
 
     @classmethod
@@ -168,6 +215,10 @@ class ModelConfig:
     roles: tuple[str, ...]
     max_sensitivity: str
     max_concurrency: int
+    trust_tier: str = "official_subscription"
+    capabilities: tuple[str, ...] = ("read",)
+    execution_profile: str = "read_only"
+    base_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +226,8 @@ class RoleConfig:
     name: str
     models: tuple[str, ...]
     reviewers: tuple[str, ...]
+    reasoning_effort: str = "high"
+    reviewer_reasoning_effort: str = "high"
 
 
 @dataclass(frozen=True)
@@ -188,6 +241,7 @@ class Profile:
     deterministic_gates: tuple[str, ...]
     minimax_mode: str
     preserve_live_trading_false: bool = False
+    public_repository: bool = False
 
 
 @dataclass(frozen=True)
@@ -210,6 +264,11 @@ class RouteDecision:
     reason: str
     context_sha256: str
     fallback_allowed: bool = False
+    write_mode: str = "read_only"
+    trust_tier: str | None = None
+    execution_profile: str = "read_only"
+    reasoning_effort: str | None = None
+    reviewer_reasoning_effort: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -234,6 +293,10 @@ class RunResult:
     exit_code: int | None
     provenance_verified: bool
     error_code: str | None = None
+    changed_files: int = 0
+    patch_sha256: str | None = None
+    repairs: int = 0
+    gates_passed: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

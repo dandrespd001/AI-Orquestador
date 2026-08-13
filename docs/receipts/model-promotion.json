@@ -1,0 +1,154 @@
+{
+  "canaries": [
+    {
+      "attempts": 5,
+      "model": "deepseek-v4-flash",
+      "passed": 5,
+      "promotion_ready": true,
+      "provenance_verified": [
+        true
+      ],
+      "provider": "deepseek",
+      "receipt_predates_current_code": true,
+      "registry_status": "available",
+      "source": "deepseek-writer-canary.json",
+      "statuses": [
+        "PASSED"
+      ],
+      "trust_tier": "official_subscription",
+      "verdict": "promoted"
+    },
+    {
+      "attempts": 5,
+      "model": "gemini-free-fast",
+      "passed": 5,
+      "promotion_ready": true,
+      "provenance_verified": [
+        true
+      ],
+      "provider": "antigravity",
+      "receipt_predates_current_code": true,
+      "registry_status": "available",
+      "source": "gemini-free-writer-canary.json",
+      "statuses": [
+        "PASSED"
+      ],
+      "trust_tier": "web_free",
+      "verdict": "promoted"
+    },
+    {
+      "attempts": 1,
+      "model": "kat-coder-free",
+      "passed": 0,
+      "promotion_ready": false,
+      "provenance_verified": [
+        false
+      ],
+      "provider": "zenmux-free",
+      "receipt_predates_current_code": true,
+      "registry_status": "candidate",
+      "source": "kat-coder-writer-canary.json",
+      "statuses": [
+        "FAILED"
+      ],
+      "trust_tier": "web_free",
+      "verdict": "untested"
+    },
+    {
+      "attempts": 1,
+      "model": "kimi-free-code",
+      "passed": 0,
+      "promotion_ready": false,
+      "provenance_verified": [
+        true
+      ],
+      "provider": "huggingchat",
+      "receipt_predates_current_code": true,
+      "registry_status": "candidate",
+      "source": "kimi-free-writer-canary.json",
+      "statuses": [
+        "MALFORMED_PATCH"
+      ],
+      "trust_tier": "web_free",
+      "verdict": "untested"
+    },
+    {
+      "attempts": 1,
+      "model": "local-qwen36-agent",
+      "passed": 0,
+      "promotion_ready": false,
+      "provenance_verified": [
+        false
+      ],
+      "provider": "local-ai",
+      "receipt_predates_current_code": true,
+      "registry_status": "candidate",
+      "source": "local-qwen36-writer-canary.json",
+      "statuses": [
+        "FAILED"
+      ],
+      "trust_tier": "local",
+      "verdict": "untested"
+    },
+    {
+      "attempts": 5,
+      "model": "MiniMax-M3",
+      "passed": 5,
+      "promotion_ready": true,
+      "provenance_verified": [
+        true
+      ],
+      "provider": "minimax",
+      "receipt_predates_current_code": true,
+      "registry_status": "available",
+      "source": "minimax-writer-canary.json",
+      "statuses": [
+        "PASSED"
+      ],
+      "trust_tier": "official_subscription",
+      "verdict": "promoted"
+    },
+    {
+      "attempts": 1,
+      "model": "qwen-web-max",
+      "passed": 0,
+      "promotion_ready": false,
+      "provenance_verified": [
+        false
+      ],
+      "provider": "qwen-web",
+      "receipt_predates_current_code": true,
+      "registry_status": "candidate",
+      "source": "qwen-web-writer-canary.json",
+      "statuses": [
+        "FAILED"
+      ],
+      "trust_tier": "web_free",
+      "verdict": "untested"
+    }
+  ],
+  "evidence_health": {
+    "note": "receipts lacking exit_code/error_code predate the current writer_canary.py; re-run the canaries to refresh them",
+    "stale_receipts": [
+      "deepseek-v4-flash",
+      "gemini-free-fast",
+      "kat-coder-free",
+      "kimi-free-code",
+      "local-qwen36-agent",
+      "MiniMax-M3",
+      "qwen-web-max"
+    ]
+  },
+  "generated_at": "2026-08-13T21:05:20Z",
+  "generated_by": "scripts/build_promotion_receipt.py",
+  "kind": "model_promotion",
+  "models_without_canary": [
+    "kimi-official"
+  ],
+  "promotion_rule": {
+    "min_attempts": 5,
+    "required": "all attempts pass; promotion_ready is advisory and does not change models.toml, which is edited by hand"
+  },
+  "schema_version": 1,
+  "source_root": "~/.local/share/ai-orchestrator"
+}

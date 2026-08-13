@@ -214,10 +214,11 @@ def audit_storage() -> dict[str, Any]:
             if non_official:
                 findings.append(
                     StorageFinding(
-                        "critical",
-                        "NON_OFFICIAL_PROVIDER_ACTIVE",
+                        "info",
+                        "THIRD_PARTY_PROVIDER_INVENTORY",
                         str(omniroute_db),
-                        "providers=" + ",".join(non_official),
+                        "trust_tiers_enforced_by_orchestrator;providers="
+                        + ",".join(non_official),
                     )
                 )
             if content_inventory["request_body_references"] or content_inventory["response_body_references"]:

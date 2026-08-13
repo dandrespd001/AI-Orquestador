@@ -16,11 +16,19 @@ from ai_orchestrator.archive import ArchiveError, create_encrypted_archive
 from ai_orchestrator.benchmark import atomic_private_json, run_gateway_benchmark, select_gateway
 from ai_orchestrator.canary import ROUTES, run_official_canaries
 from ai_orchestrator.config import (
+    config_root,
+    load_gates,
     load_models,
     load_profile,
     load_roles,
     validate_configuration,
 )
+from ai_orchestrator.config_sync import (
+    apply_config_sync,
+    canonical_config_root,
+    config_sync_status,
+)
+from ai_orchestrator.credentials import minimax_runtime_key, omniroute_runtime_key
 from ai_orchestrator.evals import run_routing_eval
 from ai_orchestrator.models import ContractError, TaskSpec
 from ai_orchestrator.optimization import prompt_optimization_preflight
@@ -37,6 +45,7 @@ from ai_orchestrator.storage import (
     storage_receipt,
 )
 from ai_orchestrator.telemetry import TelemetryStore
+from ai_orchestrator.writer_canary import run_writer_canaries
 
 
 EXIT_POLICY = 4
@@ -59,9 +68,16 @@ def _route(spec_path: str, profile_name: str, *, record: bool) -> tuple[TaskSpec
 
 
 def _local_health() -> dict[str, object]:
-    request = urllib.request.Request("http://127.0.0.1:20128/v1/models", method="GET")
+    key = omniroute_runtime_key()
+    if not key:
+        return {"reachable": False, "status": None}
+    request = urllib.request.Request(
+        "http://127.0.0.1:20128/v1/models",
+        headers={"Authorization": "Bearer " + key},
+        method="GET",
+    )
     try:
-        with urllib.request.urlopen(request, timeout=1.5) as response:
+        with urllib.request.urlopen(request, timeout=10.0) as response:
             return {"reachable": True, "status": response.status}
     except (urllib.error.URLError, TimeoutError, ConnectionError, socket.timeout):
         return {"reachable": False, "status": None}
@@ -71,15 +87,31 @@ def command_doctor(args: argparse.Namespace) -> int:
     configuration = validate_configuration(args.profile)
     commands = {
         name: shutil.which(name)
-        for name in ("codex", "claude", "omniroute", "gpg", "zstd", "tar", "systemd-creds")
+        for name in (
+            "codex", "claude", "qwen", "kimi", "omniroute",
+            "bwrap", "git", "gpg", "zstd", "tar", "systemd-creds",
+        )
     }
     storage = audit_storage()
+    sync = config_sync_status(canonical_config_root(), config_root())
+    credentials = {
+        "minimax": minimax_runtime_key() is not None,
+        "omniroute": omniroute_runtime_key() is not None,
+    }
     payload = {
         "schema_version": 1,
-        "ok": configuration["ok"] and all(commands.values()) and storage["ok"],
+        "ok": (
+            configuration["ok"]
+            and all(commands.values())
+            and storage["ok"]
+            and sync["in_sync"]
+            and all(credentials.values())
+        ),
         "configuration": configuration,
         "commands": commands,
         "omniroute": _local_health(),
+        "credentials": credentials,
+        "config_sync": sync,
         "storage": storage,
     }
     _print(payload)
@@ -98,13 +130,39 @@ def command_run(args: argparse.Namespace) -> int:
         _print({"decision": decision.as_dict(), "status": "HANDOFF_REQUIRED"})
         return EXIT_POLICY
     output = Path(args.output).expanduser() if args.output else None
-    result, stdout = execute(task, decision, output_path=output)
+    profile = load_profile(args.profile)
+    if task.gate_profile == "profile":
+        gate_commands = profile.deterministic_gates
+        gate_timeout_seconds = task.timeout_seconds
+    else:
+        gate_profiles = load_gates()
+        if task.gate_profile not in gate_profiles:
+            raise ContractError(f"unknown gate_profile: {task.gate_profile}")
+        gate_profile = gate_profiles[task.gate_profile]
+        gate_commands = gate_profile.commands
+        gate_timeout_seconds = gate_profile.timeout_seconds
+    result, stdout = execute(
+        task,
+        decision,
+        output_path=output,
+        gate_commands=gate_commands,
+        gate_timeout_seconds=gate_timeout_seconds,
+        protected_prefixes=profile.protected_path_prefixes,
+    )
     TelemetryStore().record_run(result)
     payload: dict[str, object] = {"decision": decision.as_dict(), "run": result.as_dict()}
     if not args.output and stdout:
         payload["output"] = stdout.decode("utf-8", "replace")
     _print(payload)
-    return 0 if result.status == "SUCCESS" else EXIT_RUNTIME
+    return 0 if result.status in {"SUCCESS", "APPLIED", "PATCH_READY"} else EXIT_RUNTIME
+
+
+def command_config_sync(args: argparse.Namespace) -> int:
+    source = Path(args.source).expanduser().resolve() if args.source else canonical_config_root()
+    target = Path(args.target).expanduser().resolve() if args.target else config_root()
+    payload = apply_config_sync(source, target) if args.apply else config_sync_status(source, target)
+    _print(payload)
+    return 0 if payload["in_sync"] else EXIT_POLICY
 
 
 def command_quota(args: argparse.Namespace) -> int:
@@ -204,6 +262,16 @@ def command_provider_canary(args: argparse.Namespace) -> int:
     return 0 if payload["status"] in {"PASSED", "DEGRADED_QUOTA"} else EXIT_RUNTIME
 
 
+def command_writer_canary(args: argparse.Namespace) -> int:
+    payload = run_writer_canaries(
+        args.model, attempts=args.attempts, timeout_seconds=args.timeout
+    )
+    if args.output:
+        atomic_private_json(Path(args.output).expanduser().resolve(), payload)
+    _print(payload)
+    return 0 if payload["status"] == "PASSED" else EXIT_RUNTIME
+
+
 def command_gateway_select(args: argparse.Namespace) -> int:
     source = Path(args.receipt).expanduser().resolve()
     if source.is_symlink() or not source.is_file():
@@ -249,6 +317,14 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("--profile", default="default")
     doctor.set_defaults(func=command_doctor)
+
+    config_parser = subparsers.add_parser("config")
+    config_subparsers = config_parser.add_subparsers(dest="config_command", required=True)
+    config_sync_parser = config_subparsers.add_parser("sync")
+    config_sync_parser.add_argument("--source")
+    config_sync_parser.add_argument("--target")
+    config_sync_parser.add_argument("--apply", action="store_true")
+    config_sync_parser.set_defaults(func=command_config_sync)
 
     route = subparsers.add_parser("route")
     route.add_argument("--spec", required=True)
@@ -297,6 +373,13 @@ def build_parser() -> argparse.ArgumentParser:
     provider_canary.add_argument("--timeout", type=int, default=120)
     provider_canary.add_argument("--output")
     provider_canary.set_defaults(func=command_provider_canary)
+
+    writer_canary = subparsers.add_parser("writer-canary")
+    writer_canary.add_argument("--model", required=True)
+    writer_canary.add_argument("--attempts", type=int, default=5)
+    writer_canary.add_argument("--timeout", type=int, default=120)
+    writer_canary.add_argument("--output")
+    writer_canary.set_defaults(func=command_writer_canary)
 
     benchmark = subparsers.add_parser("gateway-benchmark")
     benchmark.add_argument("--manifest", required=True)

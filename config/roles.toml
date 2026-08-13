@@ -1,41 +1,89 @@
 schema_version = 1
 
+# Cada rol fija el presupuesto de razonamiento que los adaptadores nativos
+# reciben por argv. Los writers externos ignoran el nivel, pero conservan el
+# mismo orden de selección y siempre pasan por worktree + gates.
+
 [roles.architecture]
-models = ["claude-opus", "gpt-5.6-luna"]
-reviewers = ["gpt-5.6-luna", "claude-opus"]
+models = ["claude-opus", "gpt-5.6-sol"]
+reviewers = ["gpt-5.6-sol", "claude-opus"]
+reasoning_effort = "xhigh"
+reviewer_reasoning_effort = "xhigh"
 
 [roles.statistics]
-models = ["gpt-5.6-luna", "claude-opus"]
+models = ["gpt-5.6-terra", "gpt-5.6-sol", "claude-opus"]
 reviewers = ["claude-opus", "gpt-5.6-sol"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
 
 [roles.security]
-models = ["gpt-5.6-luna", "claude-opus"]
-reviewers = ["claude-opus", "gpt-5.6-sol"]
+models = ["claude-opus", "gpt-5.6-sol", "gpt-5.6-terra"]
+reviewers = ["gpt-5.6-sol", "claude-opus"]
+reasoning_effort = "xhigh"
+reviewer_reasoning_effort = "xhigh"
 
 [roles.implementation]
-models = ["gpt-5.6-sol", "gpt-5.6-terra", "deepseek-v4-flash"]
-reviewers = ["claude-opus", "gpt-5.6-luna"]
+models = ["gpt-5.6-sol", "claude-sonnet", "gpt-5.6-terra", "deepseek-v4-flash"]
+reviewers = ["claude-opus", "gpt-5.6-terra"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
 
 [roles.tests]
-models = ["deepseek-v4-flash", "gpt-5.6-sol"]
+models = ["gemini-free-fast", "qwen-web-max", "kat-coder-free", "deepseek-v4-flash", "gpt-5.6-sol", "claude-sonnet"]
 reviewers = ["gpt-5.6-sol", "claude-opus"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
 
 [roles.boilerplate]
-models = ["deepseek-v4-flash", "gpt-5.6-sol"]
-reviewers = ["gpt-5.6-sol", "claude-opus"]
+models = ["gemini-free-fast", "qwen-web-max", "kat-coder-free", "MiniMax-M3", "deepseek-v4-flash", "gpt-5.6-luna"]
+reviewers = ["gpt-5.6-sol", "claude-sonnet"]
+reasoning_effort = "medium"
+reviewer_reasoning_effort = "high"
 
 [roles.long_context]
-models = ["MiniMax-M3", "kimi-official", "claude-opus"]
-reviewers = ["gpt-5.6-luna", "claude-opus"]
+models = ["MiniMax-M3", "kimi-official", "claude-opus", "claude-sonnet"]
+reviewers = ["gpt-5.6-sol", "claude-opus"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
 
 [roles.research]
-models = ["kimi-official", "claude-opus", "deepseek-v4-flash"]
-reviewers = ["gpt-5.6-luna", "claude-opus"]
+models = ["kimi-official", "kimi-free-code", "qwen-web-max", "gemini-free-fast", "claude-sonnet", "claude-opus"]
+reviewers = ["gpt-5.6-terra", "claude-opus"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
 
 [roles.docs]
-models = ["deepseek-v4-flash", "gpt-5.6-sol", "MiniMax-M3"]
-reviewers = ["gpt-5.6-sol", "claude-opus"]
+models = ["gemini-free-fast", "qwen-web-max", "MiniMax-M3", "deepseek-v4-flash", "claude-sonnet", "gpt-5.6-sol"]
+reviewers = ["gpt-5.6-sol", "claude-sonnet"]
+reasoning_effort = "medium"
+reviewer_reasoning_effort = "high"
+
+[roles.bulk_refactor]
+models = ["MiniMax-M3", "gpt-5.6-sol", "claude-sonnet", "gpt-5.6-terra"]
+reviewers = ["claude-opus", "gpt-5.6-sol"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "xhigh"
 
 [roles.review]
-models = ["gpt-5.6-luna", "claude-opus", "gpt-5.6-sol"]
-reviewers = ["claude-opus", "gpt-5.6-luna"]
+models = ["gpt-5.6-terra", "claude-opus", "gpt-5.6-sol", "claude-sonnet"]
+reviewers = ["claude-opus", "gpt-5.6-sol"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "xhigh"
+
+[roles.bounded_cpp]
+models = ["deepseek-v4-flash", "gpt-5.6-sol", "claude-sonnet"]
+reviewers = ["gpt-5.6-sol", "claude-opus"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "xhigh"
+
+[roles.determinism]
+models = ["gpt-5.6-sol", "claude-opus"]
+reviewers = ["claude-opus", "gpt-5.6-terra"]
+reasoning_effort = "xhigh"
+reviewer_reasoning_effort = "xhigh"
+
+[roles.godot_ui]
+models = ["kimi-official", "gpt-5.6-luna", "claude-sonnet"]
+reviewers = ["claude-sonnet", "gpt-5.6-sol"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"

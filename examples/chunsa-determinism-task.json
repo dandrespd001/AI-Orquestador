@@ -1,0 +1,18 @@
+{
+  "repo": "/home/adquiod/Imágenes/Project/CHUNSA001",
+  "task_type": "determinism",
+  "sensitivity": "internal",
+  "prompt_file": "briefs/REEMPLAZAR_POR_BRIEF.md",
+  "input_paths": [
+    "docs/specs/SPEC-001_NUCLEO_SIMULACION_DETERMINISTA.md"
+  ],
+  "output_contract": "unified_diff",
+  "timeout_seconds": 1800,
+  "write_mode": "validated_patch",
+  "allowed_write_paths": [
+    "addons/chunsa_sim/core",
+    "tests"
+  ],
+  "gate_profile": "chunsa-determinism",
+  "max_repairs": 2
+}

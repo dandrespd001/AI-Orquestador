@@ -21,6 +21,7 @@ optimize = [
 [project.scripts]
 ai-orchestrator = "ai_orchestrator.cli:main"
 ai-orchestrator-omniroute-wrapper = "ai_orchestrator.service_wrapper:main"
+omniroute-safe = "ai_orchestrator.omniroute_safe:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

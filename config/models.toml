@@ -8,9 +8,12 @@ transport = "codex_cli"
 route_model = "gpt-5.6-sol"
 official = true
 status = "available"
-roles = ["implementation", "review", "docs", "tests"]
+roles = ["architecture", "implementation", "review", "docs", "tests", "bounded_cpp", "determinism"]
 max_sensitivity = "financial_control"
 max_concurrency = 2
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "native_writer"
 
 [[models]]
 id = "gpt-5.6-terra"
@@ -20,9 +23,12 @@ transport = "codex_cli"
 route_model = "gpt-5.6-terra"
 official = true
 status = "available"
-roles = ["implementation", "review"]
+roles = ["implementation", "review", "statistics", "security"]
 max_sensitivity = "financial_control"
 max_concurrency = 2
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "native_writer"
 
 [[models]]
 id = "gpt-5.6-luna"
@@ -32,9 +38,12 @@ transport = "codex_cli"
 route_model = "gpt-5.6-luna"
 official = true
 status = "available"
-roles = ["architecture", "statistics", "security", "review"]
+roles = ["implementation", "review", "godot_ui"]
 max_sensitivity = "financial_control"
 max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "native_writer"
 
 [[models]]
 id = "claude-opus"
@@ -44,42 +53,153 @@ transport = "claude_cli"
 route_model = "opus"
 official = true
 status = "available"
-roles = ["architecture", "review", "long_context", "security"]
+roles = ["architecture", "review", "long_context", "security", "determinism"]
 max_sensitivity = "financial_control"
 max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "native_writer"
+
+[[models]]
+id = "claude-sonnet"
+family = "anthropic-claude"
+provider = "anthropic"
+transport = "claude_cli"
+route_model = "sonnet"
+official = true
+status = "available"
+roles = ["implementation", "review", "docs", "tests", "godot_ui", "bounded_cpp"]
+max_sensitivity = "financial_control"
+max_concurrency = 2
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "native_writer"
 
 [[models]]
 id = "deepseek-v4-flash"
 family = "deepseek"
 provider = "deepseek"
-transport = "omniroute"
-route_model = "deepseek/deepseek-v4-flash"
+transport = "qwen_omniroute_cli"
+route_model = "ds/deepseek-v4-flash"
 official = true
 status = "available"
-roles = ["tests", "boilerplate", "docs", "implementation"]
+roles = ["tests", "boilerplate", "docs", "implementation", "bounded_cpp"]
 max_sensitivity = "internal"
 max_concurrency = 3
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
 
 [[models]]
 id = "MiniMax-M3"
 family = "minimax"
 provider = "minimax"
-transport = "minimax_official_cli"
-route_model = "minimax/MiniMax-M3"
+transport = "qwen_minimax_cli"
+route_model = "MiniMax-M3"
 official = true
+# Promovido a available el 2026-08-12: credencial oficial rotada, cifrada con
+# systemd-creds en ~/.config/ai-orchestrator/credentials, y canario APROBADO
+# con provenance_verified=true (MiniMax-M3, 5/5 pasadas). La clave anterior quedo
+# revocada, comprobado contra el endpoint real: HTTP 401.
 status = "available"
-roles = ["long_context", "docs"]
+roles = ["long_context", "docs", "boilerplate", "bulk_refactor"]
 max_sensitivity = "internal"
 max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
 
 [[models]]
 id = "kimi-official"
 family = "moonshot-kimi"
 provider = "moonshot"
-transport = "omniroute"
-route_model = "moonshot/kimi-k3"
+transport = "kimi_cli"
+route_model = "kimi-code/k3"
 official = true
 status = "quota_unavailable"
-roles = ["long_context", "research", "implementation"]
+roles = ["long_context", "research", "implementation", "godot_ui"]
 max_sensitivity = "internal"
 max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "kimi_acp_writer"
+
+# Public/local candidates are intentionally not routable until a five-run
+# writer canary produces promotion_ready=true. Their fixed route IDs come from
+# the live OmniRoute catalog; no auto/* combo is used, so provenance is exact.
+[[models]]
+id = "local-qwen36-agent"
+family = "qwen"
+provider = "local-ai"
+transport = "qwen_omniroute_cli"
+route_model = "local-ai/local-qwen36-agent"
+official = false
+status = "candidate"
+roles = ["tests", "boilerplate", "docs", "implementation"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "local"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+
+[[models]]
+id = "gemini-free-fast"
+family = "google-gemini"
+provider = "antigravity"
+transport = "qwen_omniroute_cli"
+route_model = "antigravity/gemini-3.6-flash-low"
+official = false
+# Promovido el 2026-08-12 tras 5/5 canarios de escritura con diff exacto,
+# provenance_verified=true y gates aprobados. Solo admite datos publicos.
+status = "available"
+roles = ["tests", "boilerplate", "docs", "research"]
+max_sensitivity = "public"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+
+[[models]]
+id = "qwen-web-max"
+family = "qwen"
+provider = "qwen-web"
+transport = "qwen_omniroute_cli"
+route_model = "qwen-web/qwen3.7-max"
+official = false
+status = "candidate"
+roles = ["tests", "boilerplate", "docs", "research"]
+max_sensitivity = "public"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+
+[[models]]
+id = "kimi-free-code"
+family = "moonshot-kimi"
+provider = "huggingchat"
+transport = "qwen_omniroute_cli"
+route_model = "huggingchat/moonshotai/Kimi-K2.7-Code"
+official = false
+status = "candidate"
+roles = ["implementation", "tests", "docs", "research"]
+max_sensitivity = "public"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+
+[[models]]
+id = "kat-coder-free"
+family = "kuaishou-kat"
+provider = "zenmux-free"
+transport = "qwen_omniroute_cli"
+route_model = "zenmux-free/kuaishou/kat-coder-pro-v1-free"
+official = false
+status = "candidate"
+roles = ["implementation", "tests", "boilerplate"]
+max_sensitivity = "public"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"

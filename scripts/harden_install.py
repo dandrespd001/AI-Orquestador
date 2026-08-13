@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import shutil
@@ -50,7 +51,6 @@ def parse_env(path: Path) -> dict[str, str]:
 def encrypt_credentials(values: dict[str, str]) -> list[str]:
     credentials = CONFIG_ROOT / "credentials"
     private_dir(credentials)
-    subprocess.run(["systemd-creds", "setup", "--user"], check=True, stdout=subprocess.DEVNULL)
     names = {
         "OMNIROUTE_API_KEY": "omniroute_api_key",
         "STORAGE_ENCRYPTION_KEY": "omniroute_storage_encryption_key",
@@ -122,6 +122,7 @@ def install_files() -> None:
     links = {
         "ai-orchestrator": SOURCE / ".venv" / "bin" / "ai-orchestrator",
         "ai-orchestrator-omniroute-wrapper": SOURCE / ".venv" / "bin" / "ai-orchestrator-omniroute-wrapper",
+        "omniroute-safe": SOURCE / ".venv" / "bin" / "omniroute-safe",
     }
     for name, source in links.items():
         target = bin_dir / name
@@ -135,21 +136,28 @@ def install_files() -> None:
     unit_dir = HOME / ".config" / "systemd" / "user"
     private_dir(unit_dir)
     for source in (SOURCE / "systemd").glob("*.service"):
-        shutil.copy2(source, unit_dir / source.name)
-        (unit_dir / source.name).chmod(0o600)
+        target = unit_dir / source.name
+        if target.exists() and target.samefile(source):
+            continue
+        shutil.copy2(source, target)
+        target.chmod(0o600)
     for source in (SOURCE / "systemd").glob("*.timer"):
-        shutil.copy2(source, unit_dir / source.name)
-        (unit_dir / source.name).chmod(0o600)
+        target = unit_dir / source.name
+        if target.exists() and target.samefile(source):
+            continue
+        shutil.copy2(source, target)
+        target.chmod(0o600)
 
 
-def harden_modes() -> dict[str, int]:
-    roots = [
+def harden_modes(roots: tuple[Path, ...] | None = None) -> dict[str, int]:
+    selected_roots = roots or (
         HOME / ".omniroute", HOME / ".local" / "share" / "opencode",
         HOME / ".codex", HOME / ".claude", HOME / ".kimi-code",
         HOME / ".minimax_mcp", STATE_ROOT, CONFIG_ROOT,
-    ]
+    )
     changed = 0
-    for root in roots:
+    skipped_read_only = 0
+    for root in selected_roots:
         if not root.exists() or root.is_symlink():
             continue
         for current, directories, files in os.walk(root, followlinks=False):
@@ -162,18 +170,51 @@ def harden_modes() -> dict[str, int]:
                     continue
                 desired = 0o700 if stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o111 else 0o600
                 if stat.S_IMODE(metadata.st_mode) != desired:
-                    path.chmod(desired)
-                    changed += 1
-    return {"changed": changed}
+                    try:
+                        path.chmod(desired)
+                    except OSError as exc:
+                        if exc.errno not in {errno.EACCES, errno.EPERM, errno.EROFS}:
+                            raise
+                        # Files owned by a managed runtime can be intentionally
+                        # immutable/read-only. They are outside this installer's
+                        # authority and must not block the OmniRoute cutover.
+                        skipped_read_only += 1
+                    else:
+                        changed += 1
+    return {"changed": changed, "skipped_read_only": skipped_read_only}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--apply-provider-policy", action="store_true")
+    parser.add_argument(
+        "--install-only",
+        action="store_true",
+        help="repair config, launchers and user units without reading or rotating credentials",
+    )
     args = parser.parse_args(argv)
+    if args.install_only and (args.apply or args.apply_provider_policy):
+        raise RuntimeError("--install-only cannot be combined with credential migration flags")
     if args.apply_provider_policy and not args.apply:
         raise RuntimeError("--apply-provider-policy requires --apply")
+    if args.install_only:
+        private_dir(STATE_ROOT)
+        install_files()
+        modes = harden_modes()
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "status": "INSTALL_REPAIRED",
+                    "credentials_rotated": False,
+                    "plaintext_credentials_read": False,
+                    "permissions": modes,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
     environment_path = HOME / ".omniroute" / ".env"
     values = parse_env(environment_path)
     if not args.apply:

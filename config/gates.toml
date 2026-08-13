@@ -1,0 +1,41 @@
+schema_version = 1
+
+# Named, deterministic command sets. A write task selects one with
+# `gate_profile`; repositories with profile-specific gates use "profile".
+[gates.python-unittest]
+timeout_seconds = 300
+commands = [
+  "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m unittest discover -s tests -q",
+]
+
+[gates.python-pytest]
+timeout_seconds = 300
+commands = [
+  "PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q",
+]
+
+[gates.node-test]
+timeout_seconds = 300
+commands = [
+  "npm test -- --runInBand",
+]
+
+[gates.chunsa-docs]
+timeout_seconds = 60
+commands = [
+  "git diff --check",
+]
+
+[gates.chunsa-standard]
+timeout_seconds = 600
+commands = [
+  "nice -n 19 cmake -S . -B build-gcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++",
+  "nice -n 19 cmake --build build-gcc --parallel 2",
+  "nice -n 19 ctest --test-dir build-gcc --output-on-failure",
+]
+
+[gates.chunsa-determinism]
+timeout_seconds = 1200
+commands = [
+  "bash scripts_ci/local_gates.sh",
+]

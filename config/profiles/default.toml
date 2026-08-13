@@ -6,12 +6,18 @@ allowed_models = [
   "gpt-5.6-terra",
   "gpt-5.6-luna",
   "claude-opus",
+  "claude-sonnet",
   "deepseek-v4-flash",
   "MiniMax-M3",
   "kimi-official",
+  "local-qwen36-agent",
+  "gemini-free-fast",
+  "qwen-web-max",
+  "kimi-free-code",
+  "kat-coder-free",
 ]
 deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web"]
-protected_path_prefixes = [".env", ".git", ".codex", ".claude", ".agents"]
+protected_path_prefixes = [".env", ".git", ".codex", ".claude", ".agents", ".kimi-code"]
 deterministic_gates = []
-minimax_mode = "omniroute"
-
+minimax_mode = "direct"
+public_repository = false

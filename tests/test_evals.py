@@ -34,7 +34,7 @@ class RoutingEvalTests(unittest.TestCase):
                     "expected": {
                         "status": "READY",
                         "selected_model": "deepseek-v4-flash",
-                        "transport": "omniroute",
+                        "transport": "qwen_omniroute_cli",
                     },
                 }
                 suite = repo / "suite.jsonl"

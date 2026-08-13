@@ -1,0 +1,51 @@
+schema_version = 1
+name = "chunsa"
+repo_root = "/home/adquiod/Imágenes/Project/CHUNSA001"
+public_repository = true
+auto_execute_sensitivities = ["public", "internal"]
+allowed_models = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "claude-opus",
+  "claude-sonnet",
+  "deepseek-v4-flash",
+  "MiniMax-M3",
+  "kimi-official",
+  "local-qwen36-agent",
+  "gemini-free-fast",
+  "qwen-web-max",
+  "kimi-free-code",
+  "kat-coder-free",
+]
+deny_providers = []
+protected_path_prefixes = [
+  ".env",
+  ".git",
+  ".gitignore",
+  ".github/workflows",
+  ".agents",
+  ".claude",
+  ".codex",
+  ".qwen",
+  ".kimi-code",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "QWEN.md",
+  "CMakeLists.txt",
+  "scripts_ci",
+  "docs/specs",
+  "docs/adr",
+  "docs/TOOLCHAIN.md",
+  "docs/PLAN_MAESTRO.md",
+  "docs/DELEGACION_MODELOS.md",
+  "data/schemas",
+  "data/compiled",
+  "addons/chunsa_sim/core/third_party",
+]
+deterministic_gates = [
+  "nice -n 19 cmake -S . -B build-gcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++",
+  "nice -n 19 cmake --build build-gcc --parallel 2",
+  "nice -n 19 ctest --test-dir build-gcc --output-on-failure",
+]
+minimax_mode = "direct"

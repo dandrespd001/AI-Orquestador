@@ -18,7 +18,10 @@ HANDOFF_SENSITIVITIES = {"confidential", "secrets", "financial_control", "deploy
 
 
 def _is_protected(task: TaskSpec, profile: Profile) -> bool:
-    for raw in task.input_paths + ((task.prompt_file,) if task.prompt_file else ()):
+    selected = task.input_paths + task.allowed_write_paths + (
+        (task.prompt_file,) if task.prompt_file else ()
+    )
+    for raw in selected:
         path = PurePosixPath(raw)
         for prefix in profile.protected_path_prefixes:
             protected = PurePosixPath(prefix)
@@ -36,8 +39,12 @@ def _eligible(
 ) -> tuple[bool, str]:
     if model.id not in profile.allowed_models:
         return False, "profile_denied"
-    if not model.official:
-        return False, "provider_not_official"
+    if model.trust_tier == "web_free" and (
+        task.sensitivity != "public" or not profile.public_repository
+    ):
+        return False, "web_free_requires_public_repository"
+    if task.write_mode != "read_only" and "write" not in model.capabilities:
+        return False, "model_not_write_capable"
     if model.provider in profile.deny_providers:
         return False, "provider_denied"
     if sensitivity_rank(task.sensitivity) > sensitivity_rank(model.max_sensitivity):
@@ -96,6 +103,7 @@ def select_route(
             approval_required=True,
             reason="profile repo_root does not match task repository",
             context_sha256=context_hash,
+            write_mode=task.write_mode,
         )
     if role is None:
         return RouteDecision(
@@ -116,6 +124,7 @@ def select_route(
             approval_required=True,
             reason=f"unknown task_type: {task.task_type}",
             context_sha256=context_hash,
+            write_mode=task.write_mode,
         )
 
     protected = _is_protected(task, profile)
@@ -146,8 +155,9 @@ def select_route(
             unavailable=unavailable,
             auto_execute=False,
             approval_required=True,
-            reason="no available official model satisfies profile and sensitivity policy",
+            reason="no available model satisfies capability, trust and sensitivity policy",
             context_sha256=context_hash,
+            write_mode=task.write_mode,
         )
 
     selected = eligible[0]
@@ -170,6 +180,7 @@ def select_route(
         reason_parts.append("sensitive task")
     if bridge_handoff:
         reason_parts.append("MiniMax supervised bridge required")
+    reviewer_model = _reviewer_for(role, selected, models, profile)
 
     return RouteDecision(
         schema_version=1,
@@ -182,7 +193,7 @@ def select_route(
         provider=selected.provider,
         family=selected.family,
         transport=transport,
-        reviewer_model=_reviewer_for(role, selected, models, profile),
+        reviewer_model=reviewer_model,
         alternatives=tuple(model.id for model in eligible[1:]),
         unavailable=unavailable,
         auto_execute=auto_execute,
@@ -190,4 +201,11 @@ def select_route(
         reason="; ".join(reason_parts),
         context_sha256=context_hash,
         fallback_allowed=False,
+        write_mode=task.write_mode,
+        trust_tier=selected.trust_tier,
+        execution_profile=selected.execution_profile,
+        reasoning_effort=role.reasoning_effort,
+        reviewer_reasoning_effort=(
+            role.reviewer_reasoning_effort if reviewer_model else None
+        ),
     )

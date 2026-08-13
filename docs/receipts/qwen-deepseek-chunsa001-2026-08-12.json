@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "kind": "qwen_deepseek_chunsa001_pilot",
+  "date": "2026-08-12",
+  "qwen_version": "0.21.10",
+  "omniroute_version": "3.8.49",
+  "model": "ds/deepseek-v4-flash",
+  "canaries": {
+    "runs": 10,
+    "passed": 10,
+    "latency_ms": {
+      "min": 2649,
+      "max": 4090,
+      "average": 3088
+    },
+    "orchestrator_content_retained": false
+  },
+  "headless_tasks": {
+    "successful": 1,
+    "failed": 0,
+    "last_latency_ms": 27160,
+    "provenance_verified": true,
+    "repository_modified": false
+  },
+  "supervisor_reliability": {
+    "cases": 100,
+    "passed": 100,
+    "failed": 0,
+    "qwen_open_stdin_exit_ms": 1767,
+    "unbounded_hangs": 0,
+    "orphan_processes": 0
+  },
+  "omniroute_logging": {
+    "api_key_id": "env-key",
+    "new_request_bodies_retained": 0,
+    "new_response_bodies_retained": 0,
+    "detail_state": "none"
+  },
+  "service": {
+    "manager": "systemd-user",
+    "bind": "127.0.0.1:20128",
+    "xdg_autostart_disabled": true
+  },
+  "promotion": {
+    "status": "pilot",
+    "required_successful_tasks": 20,
+    "required_stable_days": 7
+  }
+}

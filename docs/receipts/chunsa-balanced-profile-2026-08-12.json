@@ -1,0 +1,82 @@
+{
+  "configuration": {
+    "active_config_in_sync": true,
+    "gate_profiles": 6,
+    "models": 13,
+    "profile": "chunsa",
+    "repository_visibility_verified": "PUBLIC",
+    "roles": 14
+  },
+  "date": "2026-08-12",
+  "kind": "chunsa_balanced_profile_cutover",
+  "native_clients": {
+    "claude_sonnet_high": "PASSED",
+    "codex_sol_high": "PASSED"
+  },
+  "official_provider_canary": {
+    "content_retained": false,
+    "deepseek": "PASSED",
+    "kimi": "QUOTA_UNAVAILABLE",
+    "minimax": "PASSED",
+    "provenance_required": true
+  },
+  "omniroute": {
+    "bind": "127.0.0.1:20128",
+    "credentials": "systemd-creds",
+    "http_status": 200,
+    "plaintext_credentials_read_during_repair": false,
+    "service": "active"
+  },
+  "schema_version": 1,
+  "superseded_by": {
+    "date": "2026-08-13",
+    "reason": "El bloque writer_canary de este recibo se mantuvo a mano y contradice los recibos de maquina: decia 0 de 5 para los cuatro candidatos (real: 0 de 1) e infravaloraba deepseek (1 de 2) y minimax (1 de 1), que son 5 de 5. El resto del recibo se conserva como registro del corte del 2026-08-12.",
+    "receipt": "docs/receipts/model-promotion.json"
+  },
+  "verification": {
+    "chunsa_lanes": 3,
+    "golden_cases_per_lane": 1074,
+    "golden_failures": 0,
+    "lanes_identical": true,
+    "opencode_guard_tests": 5,
+    "orchestrator_unit_tests": 65,
+    "tests_per_lane": 59
+  },
+  "writer_canary": {
+    "deepseek": {
+      "attempts": 2,
+      "note": "one transient model-process failure; retained behind supervision",
+      "passed": 1
+    },
+    "external_writers_modify_source": false,
+    "gemini_free_fast": {
+      "attempts": 5,
+      "passed": 5,
+      "promotion_ready": true
+    },
+    "kat_coder_free": {
+      "attempts": 5,
+      "passed": 0,
+      "promotion_ready": false
+    },
+    "kimi_free_code": {
+      "attempts": 5,
+      "passed": 0,
+      "promotion_ready": false
+    },
+    "local_qwen36_agent": {
+      "attempts": 5,
+      "passed": 0,
+      "promotion_ready": false
+    },
+    "minimax": {
+      "attempts": 1,
+      "passed": 1
+    },
+    "qwen_web_max": {
+      "attempts": 5,
+      "passed": 0,
+      "promotion_ready": false
+    }
+  }
+}

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
-import subprocess
+import re
+import shutil
+import sys
 import tempfile
 import time
 import uuid
@@ -11,7 +14,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ai_orchestrator.credentials import minimax_runtime_key, omniroute_runtime_key
+from ai_orchestrator.kimi_acp import AcpError, run_kimi_acp
 from ai_orchestrator.models import RouteDecision, RunResult, TaskSpec, ensure_private_directory
+from ai_orchestrator.supervisor import ProcessOutcome, run_supervised
+from ai_orchestrator.writer import (
+    WorktreeTransaction,
+    WriterError,
+    gates_passed,
+    repair_prompt,
+    run_gates,
+)
 
 
 class AdapterError(RuntimeError):
@@ -35,41 +48,112 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         "CODEX_HOME",
         "CLAUDE_CONFIG_DIR",
     }
-    if transport == "omniroute":
+    if transport in {"omniroute", "qwen_omniroute_cli"}:
         allowed.update({"OMNIROUTE_API_KEY", "OMNIROUTE_BASE_URL", "OMNIROUTE_CONTEXT"})
+    if transport == "qwen_minimax_cli":
+        allowed.add("MINIMAX_API_KEY")
+    if transport == "kimi_cli":
+        allowed.update({"KIMI_CODE_HOME", "KIMI_LOG_LEVEL"})
     result = {key: value for key, value in os.environ.items() if key in allowed}
+    if transport == "qwen_omniroute_cli":
+        runtime_key = result.pop("OMNIROUTE_API_KEY", None) or omniroute_runtime_key(result)
+        if runtime_key:
+            result["OPENAI_API_KEY"] = runtime_key
+        result["OPENAI_BASE_URL"] = result.pop(
+            "OMNIROUTE_BASE_URL", "http://127.0.0.1:20128/v1"
+        )
+    elif transport == "qwen_minimax_cli":
+        runtime_key = minimax_runtime_key(result)
+        result.pop("MINIMAX_API_KEY", None)
+        if runtime_key:
+            result["ANTHROPIC_API_KEY"] = runtime_key
+        # SIN sufijo /v1: el cliente Anthropic de Qwen lo anade el mismo. Con
+        # ".../anthropic/v1" la peticion sale a /anthropic/v1/v1/messages y el
+        # servidor devuelve 404 — que Qwen envuelve como subtype=success,
+        # is_error=false y exit 0, con el texto "[API Error: 404 404 page not
+        # found]" dentro. Verificado el 2026-08-12: /anthropic/v1/v1/messages
+        # da 404 y /anthropic/v1/messages da 401, y con esta base el canario
+        # devuelve el token exacto.
+        result["ANTHROPIC_BASE_URL"] = "https://api.minimax.io/anthropic"
+    elif transport == "kimi_cli":
+        result["KIMI_DISABLE_TELEMETRY"] = "1"
+        result["KIMI_CODE_NO_AUTO_UPDATE"] = "1"
+        result["KIMI_DISABLE_CRON"] = "1"
+        result["KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT"] = "0"
+        result["KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS"] = "1"
+        result["KIMI_SUBAGENT_TIMEOUT_MS"] = "1"
+        result["KIMI_CODE_BUILTIN_PRODUCT_SKILLS"] = "0"
+        result["KIMI_LOG_LEVEL"] = "error"
     result.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
     result["PYTHONDONTWRITEBYTECODE"] = "1"
     return result
 
 
-def _command(decision: RouteDecision, prompt_path: Path) -> list[str]:
+def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list[str]:
+    writing = task.write_mode != "read_only"
     if decision.transport == "codex_cli":
-        return [
+        command = [
             "codex",
             "exec",
             "--json",
+            "--ephemeral",
+            "--ignore-user-config",
+            "--sandbox",
+            "workspace-write" if writing else "read-only",
             "--model",
             str(decision.requested_route_model),
+            "-c",
+            f'model_reasoning_effort="{decision.reasoning_effort or "high"}"',
             "-",
         ]
+        return command
     if decision.transport == "claude_cli":
-        return [
+        command = [
             "claude",
             "--print",
+            "--safe-mode",
+            "--no-session-persistence",
             "--model",
             str(decision.requested_route_model),
+            "--effort",
+            str(decision.reasoning_effort or "high"),
             "--output-format",
             "json",
             "--tools",
-            "",
+            "Read,Edit,Write" if writing else "Read",
+            "--permission-mode",
+            "acceptEdits" if writing else "plan",
+            "--disallowedTools",
+            "Bash,Agent,WebFetch,WebSearch",
         ]
-    if decision.transport == "minimax_official_cli":
+        return command
+    if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
+        auth_type = "openai" if decision.transport == "qwen_omniroute_cli" else "anthropic"
+        # Guarded writers never receive a writable mount. They return a diff,
+        # which the orchestrator validates and applies inside its worktree.
+        guarded_patch = writing and decision.execution_profile == "patch_api_writer"
         return [
-            "opencode", "run", "--pure", "--title", "ai-orchestrator-minimax-readonly",
-            "--agent", "auditor", "-m",
+            "qwen",
+            "--auth-type", auth_type,
+            "--bare",
+            "--output-format", "json",
+            "--approval-mode", "plan" if guarded_patch or not writing else "auto-edit",
+            "--exclude-tools", "run_shell_command,agent,web_fetch,web_search,skill",
+            "--max-wall-time", f"{task.timeout_seconds}s",
+            # 30, no 8. Con 8 solo caben los canarios: una tarea real de
+            # analisis sobre el repo consumio 23 turnos de asistente y 10 de
+            # usuario (medido el 2026-08-12 sobre spatial_hash de CHUNSA001).
+            # Con 8 fallaba SIEMPRE con FatalTurnLimitedError codigo 53, que el
+            # supervisor traduce a TURN_BUDGET_EXCEEDED — un limite que no deja
+            # completar nada no acota el riesgo, solo lo esconde.
+            # El techo real sigue siendo --max-wall-time y --max-tool-calls.
+            "--max-session-turns", "30",
+            "--max-tool-calls", "32",
+            "--model",
             str(decision.requested_route_model),
         ]
+    if decision.transport == "kimi_cli":
+        return ["kimi", "acp"]
     if decision.transport == "omniroute":
         return [
             "omniroute",
@@ -84,6 +168,217 @@ def _command(decision: RouteDecision, prompt_path: Path) -> list[str]:
             str(prompt_path),
         ]
     raise AdapterError("HANDOFF_REQUIRED", f"unsupported supervised transport: {decision.transport}")
+
+
+def _qwen_sandbox_command(
+    command: list[str], worktree: Path, *, writable: bool = True
+) -> tuple[list[str], dict[str, str]]:
+    """Wrap Qwen in a filesystem sandbox while preserving host networking."""
+
+    bwrap = shutil.which("bwrap")
+    qwen = shutil.which("qwen")
+    if not bwrap or not qwen:
+        raise AdapterError("SANDBOX_UNAVAILABLE", "bwrap and qwen are required")
+    wrapper = Path(qwen).resolve()
+    qwen_root_candidates: list[Path] = []
+    try:
+        launcher = wrapper.read_text(encoding="utf-8")[:4096]
+        matched = re.search(r"['\"](/[^'\"]+/qwen-code-[^/'\"]+)/bin/qwen['\"]", launcher)
+        if matched:
+            qwen_root_candidates.append(Path(matched.group(1)))
+    except (OSError, UnicodeError):
+        pass
+    qwen_root_candidates.extend((wrapper.parents[1] / "lib").glob("qwen-code-*"))
+    if not qwen_root_candidates:
+        # The managed installation keeps the versioned runtime alongside the
+        # wrapper under ~/.local/lib.
+        qwen_root_candidates = sorted(Path(qwen).resolve().parents[1].glob("lib/qwen-code-*"))
+    if not qwen_root_candidates:
+        qwen_root_candidates = sorted(Path.home().glob(".local/lib/qwen-code-*"))
+    if not qwen_root_candidates:
+        raise AdapterError("SANDBOX_UNAVAILABLE", "cannot locate the Qwen runtime")
+    qwen_root = qwen_root_candidates[0].resolve()
+    sandboxed = [
+        bwrap,
+        "--unshare-all",
+        "--share-net",
+        "--die-with-parent",
+        "--new-session",
+        "--ro-bind", "/", "/",
+        "--tmpfs", "/home",
+        "--tmpfs", "/tmp",
+        "--tmpfs", "/opt",
+        "--proc", "/proc",
+        "--dev", "/dev",
+        "--dir", "/opt/qwen",
+        "--ro-bind", str(qwen_root), "/opt/qwen",
+        "--dir", "/tmp/workspace",
+        "--bind" if writable else "--ro-bind", str(worktree), "/tmp/workspace",
+        "--dir", "/tmp/qwen-home",
+        "--chdir", "/tmp/workspace",
+        "--",
+        "/opt/qwen/bin/qwen",
+        *command[1:],
+    ]
+    return sandboxed, {
+        "HOME": "/tmp/qwen-home",
+        "XDG_CONFIG_HOME": "/tmp/qwen-home/.config",
+        "XDG_DATA_HOME": "/tmp/qwen-home/.local/share",
+        "XDG_CACHE_HOME": "/tmp/qwen-home/.cache",
+    }
+
+
+def _writer_prompt(task: TaskSpec, prompt: bytes, *, patch_only: bool = False) -> bytes:
+    paths = ", ".join(task.allowed_write_paths)
+    if patch_only:
+        policy = (
+            "Produce the requested code change as a git unified diff against the current "
+            "worktree. Return only the diff starting with 'diff --git'; do not use Markdown "
+            f"fences or explanatory text. The diff may modify only: {paths}. Do not run shell "
+            "commands, start agents, use the web, change .git, or modify permission configuration. "
+            "The orchestrator—not you—will validate and apply the diff in an isolated worktree, "
+            "then run deterministic gates.\n\n"
+        )
+    else:
+        policy = (
+            "You are editing an isolated Git worktree. Implement the requested change directly. "
+            f"You may modify only these repository-relative paths: {paths}. "
+            "Do not run shell commands, start agents, use the web, change .git, or modify permission "
+            "configuration. The orchestrator will run deterministic gates after you finish.\n\n"
+        )
+    return policy.encode("utf-8") + prompt
+
+
+def _run_once(
+    task: TaskSpec,
+    decision: RouteDecision,
+    *,
+    prompt: bytes,
+    cwd: Path,
+) -> tuple[ProcessOutcome, str | None, bool]:
+    if task.write_mode != "read_only" and decision.execution_profile == "patch_api_writer":
+        worker_environment = _minimal_environment(str(decision.transport))
+        if decision.transport == "qwen_omniroute_cli":
+            credential = omniroute_runtime_key()
+            worker_environment.pop("OPENAI_API_KEY", None)
+            if credential:
+                worker_environment["OMNIROUTE_API_KEY"] = credential
+        elif decision.transport == "qwen_minimax_cli":
+            credential = minimax_runtime_key()
+            worker_environment.pop("ANTHROPIC_API_KEY", None)
+            if credential:
+                worker_environment["MINIMAX_API_KEY"] = credential
+        worker_payload = json.dumps(
+            {
+                "task": task.as_dict(),
+                "decision": decision.as_dict(),
+                "worktree": str(cwd),
+                "prompt_b64": base64.b64encode(prompt).decode("ascii"),
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        worker = run_supervised(
+            [sys.executable, "-m", "ai_orchestrator.patch_worker"],
+            input_data=worker_payload,
+            cwd=cwd,
+            env=worker_environment,
+            timeout_seconds=task.timeout_seconds,
+        )
+        if worker.returncode != 0:
+            return worker, None, False
+        try:
+            worker_result = json.loads(worker.stdout)
+            patch = base64.b64decode(worker_result["patch_b64"], validate=True)
+            reported_model = str(worker_result["reported_model"])
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            return ProcessOutcome(1, b"", b"malformed patch worker output"), None, False
+        envelope = json.dumps(
+            [
+                {"type": "system", "model": reported_model},
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": patch.decode("utf-8"),
+                },
+            ],
+            separators=(",", ":"),
+        ).encode("utf-8")
+        expected = str(decision.requested_route_model)
+        provenance = reported_model in {
+            expected,
+            expected.split("/", 1)[-1],
+            decision.selected_model,
+        }
+        return ProcessOutcome(0, envelope, b""), reported_model, provenance
+    command = _command(task, decision, task.prompt_path() or cwd)
+    environment = _minimal_environment(str(decision.transport))
+    if decision.transport == "kimi_cli":
+        executable = shutil.which("kimi")
+        if not executable:
+            return ProcessOutcome(127, b"", b"kimi unavailable"), None, False
+        try:
+            outcome = run_kimi_acp(
+                executable=executable,
+                worktree=cwd,
+                allowed_write_paths=task.allowed_write_paths,
+                environment=environment,
+                model=str(decision.requested_route_model),
+                prompt=prompt,
+                timeout_seconds=task.timeout_seconds,
+            )
+            return ProcessOutcome(0, outcome.stdout, outcome.stderr), outcome.reported_model, True
+        except AcpError as exc:
+            return ProcessOutcome(1, b"", str(exc).encode("utf-8")), None, False
+    if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
+        command, sandbox_environment = _qwen_sandbox_command(
+            command, cwd, writable=False
+        )
+        environment.update(sandbox_environment)
+    outcome = run_supervised(
+        command,
+        input_data=prompt if decision.transport != "omniroute" else None,
+        cwd=cwd,
+        env=environment,
+        timeout_seconds=task.timeout_seconds,
+    )
+    reported, provenance = _reported_model(outcome.stdout, decision)
+    return outcome, reported, provenance
+
+
+def _process_status(outcome: ProcessOutcome, decision: RouteDecision) -> tuple[str, str | None]:
+    if outcome.timed_out:
+        return "WALL_TIMEOUT", "WALL_TIMEOUT"
+    if outcome.returncode != 0:
+        combined = outcome.stdout + b"\n" + outcome.stderr
+        if outcome.returncode == 55 and b"wall-clock budget" in combined.lower():
+            return "WALL_TIMEOUT", "WALL_TIMEOUT"
+        if outcome.returncode == 55:
+            return "BUDGET_EXCEEDED", "BUDGET_EXCEEDED"
+        if outcome.returncode == 53:
+            return "TURN_BUDGET_EXCEEDED", "TURN_BUDGET_EXCEEDED"
+        if (
+            b"missing api key" in combined.lower()
+            or b"no auth type" in combined.lower()
+            or b"api_key environment variable not found" in combined.lower()
+            or b"authrequired" in combined.lower()
+        ):
+            return "CREDENTIAL_UNAVAILABLE", "CREDENTIAL_UNAVAILABLE"
+        if b"quota" in combined.lower() or b"usage limit" in combined.lower():
+            return "QUOTA_UNAVAILABLE", "QUOTA_UNAVAILABLE"
+        # patch_worker writes a PatchApiError code on stderr and nothing else.
+        # It is a fixed literal from a closed set, so trusting it leaks no
+        # provider text, and it is the only thing that separates a 429 from a
+        # dead DNS. The substring heuristics above can never reach it: they look
+        # for provider prose that deliberately never crosses that boundary.
+        code = outcome.stderr.strip().decode("ascii", "ignore")
+        if code and code.isupper() and code.replace("_", "").isalnum():
+            return "FAILED", code
+        return "FAILED", "MODEL_PROCESS_FAILED"
+    if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
+        error = _qwen_error(outcome.stdout, outcome.stderr)
+        return ("SUCCESS", None) if error is None else (error, error)
+    return "SUCCESS", None
 
 
 def _find_reported_model(payload: Any) -> str | None:
@@ -105,7 +400,7 @@ def _find_reported_model(payload: Any) -> str | None:
 
 
 def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None, bool]:
-    if decision.transport in {"codex_cli", "claude_cli", "minimax_official_cli"}:
+    if decision.transport in {"codex_cli", "claude_cli"}:
         # Native clients receive an exact model argv and own their authenticated
         # connection. The argv is the provenance boundary for those transports.
         return decision.selected_model, True
@@ -118,6 +413,55 @@ def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None,
         return None, False
     expected = str(decision.requested_route_model)
     return reported, reported in {expected, expected.split("/", 1)[-1], decision.selected_model}
+
+
+def _qwen_error(stdout: bytes, stderr: bytes) -> str | None:
+    """Validate Qwen's buffered JSON result envelope.
+
+    Qwen may emit a result object even for upstream failures, so a zero process
+    exit code alone is not a success signal.
+    """
+
+    try:
+        payload = json.loads(stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return "MALFORMED_OUTPUT"
+    if not isinstance(payload, list):
+        return "MALFORMED_OUTPUT"
+    results = [row for row in payload if isinstance(row, dict) and row.get("type") == "result"]
+    if not results:
+        return "MALFORMED_OUTPUT"
+    result = results[-1]
+    if result.get("is_error") is True or result.get("subtype") != "success":
+        combined = stdout + b"\n" + stderr
+        if b"quota" in combined.lower() or b"usage limit" in combined.lower():
+            return "QUOTA_UNAVAILABLE"
+        return "PROVIDER_ERROR"
+    final_text = result.get("result")
+    if not isinstance(final_text, str) or not final_text.strip():
+        return "MALFORMED_OUTPUT"
+    if re.match(r"^\[(?:API )?Error:", final_text.strip(), re.IGNORECASE):
+        return "PROVIDER_ERROR"
+    if isinstance(result.get("error"), dict):
+        return "PROVIDER_ERROR"
+    return None
+
+
+def _qwen_result_text(stdout: bytes) -> bytes:
+    try:
+        payload = json.loads(stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise WriterError("MALFORMED_PATCH", "Qwen did not return JSON") from exc
+    if not isinstance(payload, list):
+        raise WriterError("MALFORMED_PATCH", "Qwen result envelope is not a list")
+    results = [row for row in payload if isinstance(row, dict) and row.get("type") == "result"]
+    final = results[-1].get("result") if results else None
+    if not isinstance(final, str):
+        raise WriterError("MALFORMED_PATCH", "Qwen result has no textual patch")
+    patch = final.strip()
+    if not patch.startswith("diff --git ") or "```" in patch:
+        raise WriterError("MALFORMED_PATCH", "Qwen result is not a bare git unified diff")
+    return (patch + "\n").encode("utf-8")
 
 
 def _atomic_private_write(path: Path, data: bytes) -> None:
@@ -147,6 +491,9 @@ def execute(
     decision: RouteDecision,
     *,
     output_path: Path | None = None,
+    gate_commands: tuple[str, ...] = (),
+    gate_timeout_seconds: int | None = None,
+    protected_prefixes: tuple[str, ...] = (),
 ) -> tuple[RunResult, bytes]:
     if not decision.auto_execute or decision.status != "READY":
         raise AdapterError("HANDOFF_REQUIRED", decision.reason)
@@ -154,38 +501,103 @@ def execute(
     if prompt_path is None:
         raise AdapterError("PROMPT_REQUIRED", "run requires prompt_file")
 
-    command = _command(decision, prompt_path)
     prompt = prompt_path.read_bytes()
     started = datetime.now(UTC)
     start_ns = time.monotonic_ns()
-    try:
-        completed = subprocess.run(
-            command,
-            input=prompt if decision.transport != "omniroute" else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=task.repo,
-            env=_minimal_environment(str(decision.transport)),
-            timeout=task.timeout_seconds,
-            check=False,
+    stdout = b""
+    patch_sha256: str | None = None
+    changed_files = 0
+    repairs = 0
+    gate_state: bool | None = None
+    reported: str | None = None
+    provenance = False
+    exit_code: int | None = None
+
+    if task.write_mode == "read_only":
+        outcome, reported, provenance = _run_once(
+            task, decision, prompt=prompt, cwd=Path(task.repo)
         )
-        exit_code: int | None = completed.returncode
-        stdout = completed.stdout
-        if completed.returncode != 0:
-            status = "FAILED"
-            error_code = "MODEL_PROCESS_FAILED"
-        else:
-            status = "SUCCESS"
-            error_code = None
-    except subprocess.TimeoutExpired:
-        exit_code = None
-        stdout = b""
-        status = "AMBIGUOUS_TIMEOUT"
-        error_code = "AMBIGUOUS_TIMEOUT"
+        exit_code = outcome.returncode
+        stdout = outcome.stdout
+        status, error_code = _process_status(outcome, decision)
+    else:
+        try:
+            with WorktreeTransaction(task) as transaction:
+                assert transaction.worktree is not None
+                patch_transport = decision.execution_profile == "patch_api_writer"
+                writer_input = _writer_prompt(task, prompt, patch_only=patch_transport)
+                while True:
+                    outcome, reported, provenance = _run_once(
+                        task,
+                        decision,
+                        prompt=writer_input,
+                        cwd=transaction.worktree,
+                    )
+                    exit_code = outcome.returncode
+                    process_status, process_error = _process_status(outcome, decision)
+                    if process_status != "SUCCESS":
+                        status, error_code = process_status, process_error
+                        stdout = outcome.stdout
+                        break
+                    if not provenance:
+                        status, error_code = "PROVENANCE_UNVERIFIED", "PROVENANCE_UNVERIFIED"
+                        stdout = outcome.stdout
+                        break
+
+                    if patch_transport:
+                        transaction.apply_candidate_patch(_qwen_result_text(outcome.stdout))
+
+                    patch = transaction.collect_patch(protected_prefixes)
+                    stdout = patch.patch
+                    patch_sha256 = patch.sha256
+                    changed_files = len(patch.paths)
+                    if not patch.patch:
+                        status, error_code = "NO_CHANGES", "NO_CHANGES"
+                        break
+
+                    gate_outcomes = run_gates(
+                        transaction.worktree,
+                        gate_commands,
+                        gate_timeout_seconds or task.timeout_seconds,
+                    )
+                    if gates_passed(gate_outcomes, len(gate_commands)):
+                        gate_state = True
+                        native_writer = decision.execution_profile == "native_writer"
+                        if (
+                            task.write_mode == "validated_apply"
+                            and native_writer
+                            and transaction.can_apply()
+                        ):
+                            transaction.apply(patch.patch)
+                            status, error_code = "APPLIED", None
+                        else:
+                            if task.write_mode == "validated_apply" and not native_writer:
+                                error_code = "EXTERNAL_WRITER_REVIEW_REQUIRED"
+                            elif task.write_mode == "validated_apply" and not transaction.can_apply():
+                                error_code = "DIRTY_WORKTREE"
+                            else:
+                                error_code = None
+                            status = "PATCH_READY"
+                        break
+                    if not gate_commands:
+                        gate_state = None
+                        status, error_code = "PATCH_READY", "GATES_REQUIRED_FOR_APPLY"
+                        break
+                    gate_state = False
+                    if repairs >= task.max_repairs:
+                        status, error_code = "GATE_FAILED", "GATE_FAILED"
+                        break
+                    repairs += 1
+                    writer_input = _writer_prompt(
+                        task,
+                        repair_prompt(prompt, gate_outcomes),
+                        patch_only=patch_transport,
+                    )
+        except WriterError as exc:
+            status, error_code = exc.code, exc.code
 
     finished = datetime.now(UTC)
     latency_ms = (time.monotonic_ns() - start_ns) // 1_000_000
-    reported, provenance = _reported_model(stdout, decision)
     if status == "SUCCESS" and not provenance:
         status = "PROVENANCE_UNVERIFIED"
         error_code = "PROVENANCE_UNVERIFIED"
@@ -215,5 +627,9 @@ def execute(
         exit_code=exit_code,
         provenance_verified=provenance,
         error_code=error_code,
+        changed_files=changed_files,
+        patch_sha256=patch_sha256,
+        repairs=repairs,
+        gates_passed=gate_state,
     )
     return result, stdout
