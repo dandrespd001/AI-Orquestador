@@ -81,7 +81,18 @@ def select_route(
     models: dict[str, ModelConfig],
     roles: dict[str, RoleConfig],
     profile: Profile,
+    *,
+    pin: str | None = None,
 ) -> RouteDecision:
+    """``pin`` ESTRECHA los candidatos a un solo modelo; nunca concede nada.
+
+    El modelo anclado sigue pasando por las mismas comprobaciones de
+    elegibilidad —perfil, sensibilidad, capacidad de escritura, estado— y si
+    falla alguna, la ruta sale NO_ROUTE con el motivo real. Sirve para medir
+    dos rutas sobre la misma tarea sin reordenar roles.toml, que seria promover
+    antes de medir.
+    """
+
     role = roles.get(task.task_type)
     context_hash = task.context_sha256()
     if profile.repo_root and task.repo != str(Path(profile.repo_root).resolve()):
@@ -132,11 +143,16 @@ def select_route(
     unavailable: dict[str, str] = {}
     for model_id in role.models:
         model = models[model_id]
+        if pin is not None and model_id != pin:
+            unavailable[model.id] = "not_pinned"
+            continue
         ok, reason = _eligible(model, task, profile, protected=protected)
         if ok:
             eligible.append(model)
         else:
             unavailable[model.id] = reason
+    if pin is not None and pin not in role.models:
+        unavailable[pin] = "pin_outside_role"
 
     if not eligible:
         return RouteDecision(
@@ -174,6 +190,10 @@ def select_route(
     )
     status = "READY" if auto_execute else "HANDOFF_REQUIRED"
     reason_parts = [f"selected first eligible model for role {role.name}"]
+    if pin is not None:
+        # Queda escrito en la decision y en la telemetria: una ruta anclada no
+        # es la que el enrutador habria elegido, y eso hay que poder auditarlo.
+        reason_parts.append(f"pin={pin}")
     if protected:
         reason_parts.append("protected input")
     if sensitive_handoff:

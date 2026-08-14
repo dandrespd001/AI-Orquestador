@@ -84,6 +84,72 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertTrue(decision.auto_execute)
         self.assertFalse(decision.fallback_allowed)
 
+    def test_pin_narrows_the_candidates_to_one_model(self) -> None:
+        """Fijar el modelo es lo que permite comparar dos rutas en la misma tarea.
+
+        Sin esto, medir a Pro contra Flash exigiria reordenar roles.toml — es
+        decir, promover antes de medir, el orden contrario al que pide la
+        politica.
+        """
+
+        # Pro solo esta permitido en el perfil `chunsa`, cuyo repo_root apunta
+        # al repo real: para probar el anclaje en aislamiento hay que ampliar
+        # el perfil `default` a proposito.
+        base = load_profile("default")
+        profile = replace(
+            base, allowed_models=base.allowed_models + ("deepseek-v4-pro",)
+        )
+        decision = select_route(
+            self.task(
+                task_type="bounded_cpp",
+                write_mode="validated_patch",
+                allowed_write_paths=["tests"],
+                gate_profile="python-unittest",
+            ),
+            load_models(),
+            load_roles(),
+            profile,
+            pin="deepseek-v4-pro",
+        )
+        self.assertEqual("deepseek-v4-pro", decision.selected_model)
+        self.assertEqual("native_patch_writer", decision.execution_profile)
+        self.assertIn("pin", decision.reason)
+        self.assertEqual("not_pinned", decision.unavailable["deepseek-v4-flash"])
+
+    def test_pin_cannot_widen_past_policy(self) -> None:
+        """El anclaje estrecha, nunca concede: un modelo inelegible sigue fuera."""
+
+        decision = select_route(
+            self.task(
+                task_type="bounded_cpp",
+                sensitivity="internal",
+                write_mode="validated_patch",
+                allowed_write_paths=["tests"],
+                gate_profile="python-unittest",
+            ),
+            load_models(),
+            load_roles(),
+            load_profile("default"),
+            pin="gemini-free-fast",
+        )
+        self.assertEqual("NO_ROUTE", decision.status)
+        self.assertIsNone(decision.selected_model)
+
+    def test_pin_outside_the_role_is_refused(self) -> None:
+        decision = select_route(
+            self.task(
+                task_type="bounded_cpp",
+                write_mode="validated_patch",
+                allowed_write_paths=["tests"],
+                gate_profile="python-unittest",
+            ),
+            load_models(),
+            load_roles(),
+            load_profile("default"),
+            pin="claude-opus",
+        )
+        self.assertEqual("NO_ROUTE", decision.status)
+
     def test_public_tests_use_promoted_free_writer(self) -> None:
         profile = replace(load_profile("default"), public_repository=True)
         decision = select_route(

@@ -56,12 +56,14 @@ def _print(payload: object) -> None:
     print(json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=False))
 
 
-def _route(spec_path: str, profile_name: str, *, record: bool) -> tuple[TaskSpec, Any]:
+def _route(
+    spec_path: str, profile_name: str, *, record: bool, pin: str | None = None
+) -> tuple[TaskSpec, Any]:
     task = TaskSpec.read(spec_path)
     models = load_models()
     roles = load_roles()
     profile = load_profile(profile_name)
-    decision = select_route(task, models, roles, profile)
+    decision = select_route(task, models, roles, profile, pin=pin)
     if record:
         TelemetryStore().record_route(task, decision)
     return task, decision
@@ -119,13 +121,15 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 
 def command_route(args: argparse.Namespace) -> int:
-    _, decision = _route(args.spec, args.profile, record=not args.no_record)
+    _, decision = _route(
+        args.spec, args.profile, record=not args.no_record, pin=args.model
+    )
     _print(decision.as_dict())
     return 0 if decision.status != "NO_ROUTE" else EXIT_POLICY
 
 
 def command_run(args: argparse.Namespace) -> int:
-    task, decision = _route(args.spec, args.profile, record=True)
+    task, decision = _route(args.spec, args.profile, record=True, pin=args.model)
     if not decision.auto_execute:
         _print({"decision": decision.as_dict(), "status": "HANDOFF_REQUIRED"})
         return EXIT_POLICY
@@ -333,11 +337,15 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("--spec", required=True)
     route.add_argument("--profile", default="default")
     route.add_argument("--no-record", action="store_true")
+    route.add_argument("--model", default=None)
     route.set_defaults(func=command_route)
 
     run = subparsers.add_parser("run")
     run.add_argument("--spec", required=True)
     run.add_argument("--profile", default="default")
+    # Ancla la ruta a un modelo concreto. Solo ESTRECHA: el modelo sigue
+    # pasando por elegibilidad, y la decision registra pin=<id>.
+    run.add_argument("--model", default=None)
     run.add_argument("--output")
     run.set_defaults(func=command_run)
 
