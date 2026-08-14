@@ -10,6 +10,7 @@ allowed_models = [
   "claude-opus",
   "claude-sonnet",
   "deepseek-v4-flash",
+  "deepseek-v4-pro",
   "MiniMax-M3",
   "kimi-official",
   "local-qwen36-agent",

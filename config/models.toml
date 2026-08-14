@@ -76,6 +76,24 @@ capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
 
 [[models]]
+# Sondeado vivo el 2026-08-14: ds/deepseek-v4-pro responde en 2043 ms.
+# Coexiste con Flash a proposito: Pro para razonamiento acotado y auditoria,
+# Flash para volumen. El enrutador elige por rol, no por preferencia.
+id = "deepseek-v4-pro"
+family = "deepseek"
+provider = "deepseek"
+transport = "qwen_omniroute_cli"
+route_model = "ds/deepseek-v4-pro"
+official = true
+status = "available"
+roles = ["review", "bounded_cpp", "implementation", "statistics"]
+max_sensitivity = "internal"
+max_concurrency = 2
+trust_tier = "official_subscription"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+
+[[models]]
 id = "deepseek-v4-flash"
 family = "deepseek"
 provider = "deepseek"

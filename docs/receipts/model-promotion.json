@@ -139,10 +139,11 @@
       "qwen-web-max"
     ]
   },
-  "generated_at": "2026-08-13T21:05:20Z",
+  "generated_at": "2026-08-14T19:25:47Z",
   "generated_by": "scripts/build_promotion_receipt.py",
   "kind": "model_promotion",
   "models_without_canary": [
+    "deepseek-v4-pro",
     "kimi-official"
   ],
   "promotion_rule": {
