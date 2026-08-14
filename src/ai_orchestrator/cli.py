@@ -264,7 +264,10 @@ def command_provider_canary(args: argparse.Namespace) -> int:
 
 def command_writer_canary(args: argparse.Namespace) -> int:
     payload = run_writer_canaries(
-        args.model, attempts=args.attempts, timeout_seconds=args.timeout
+        args.model,
+        attempts=args.attempts,
+        timeout_seconds=args.timeout,
+        execution_profile=args.execution_profile,
     )
     if args.output:
         atomic_private_json(Path(args.output).expanduser().resolve(), payload)
@@ -378,6 +381,9 @@ def build_parser() -> argparse.ArgumentParser:
     writer_canary.add_argument("--model", required=True)
     writer_canary.add_argument("--attempts", type=int, default=5)
     writer_canary.add_argument("--timeout", type=int, default=120)
+    # Mide un perfil que el modelo aun no tiene en models.toml. Promover antes
+    # de medir seria el orden contrario al que exige la politica.
+    writer_canary.add_argument("--execution-profile", default=None)
     writer_canary.add_argument("--output")
     writer_canary.set_defaults(func=command_writer_canary)
 

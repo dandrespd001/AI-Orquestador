@@ -91,7 +91,13 @@ max_sensitivity = "internal"
 max_concurrency = 2
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
-execution_profile = "patch_api_writer"
+# Promovido a escritor nativo acotado el 2026-08-14 con canario 5/5
+# (docs/receipts/deepseek-v4-pro-native-2026-08-14.json). Edita el arbol
+# desechable directamente, que es lo que le permite iterar y tocar ficheros
+# grandes; NO auto-aplica al repo de origen — termina en PATCH_READY y lo
+# revisa el Arquitecto. Unico modelo de transporte Qwen con este perfil: los
+# demas siguen entregando parche hasta que su propio canario los justifique.
+execution_profile = "native_patch_writer"
 
 [[models]]
 id = "deepseek-v4-flash"

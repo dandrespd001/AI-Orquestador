@@ -74,6 +74,7 @@ class WorktreeTransaction:
         self.source_was_clean = False
         self.root: Path | None = None
         self.worktree: Path | None = None
+        self.ignored_baseline: frozenset[str] = frozenset()
 
     def __enter__(self) -> "WorktreeTransaction":
         top = Path(_git(self.source, ["rev-parse", "--show-toplevel"]).decode().strip()).resolve()
@@ -110,8 +111,34 @@ class WorktreeTransaction:
             raise RuntimeError("worktree transaction has not started")
         return self.worktree
 
+    def _ignored_paths(self) -> frozenset[str]:
+        worktree = self._require_worktree()
+        raw = _git(worktree, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])
+        return frozenset(value.decode("utf-8", "replace") for value in raw.split(b"\0") if value)
+
+    def snapshot_ignored(self) -> None:
+        """Censar los ficheros ignorados antes de que corra el escritor.
+
+        Un gate compila y deja `build/` o `__pycache__`, y en la vuelta
+        siguiente del bucle de reparacion siguen ahi. Sin esta foto no se puede
+        distinguir lo que ensucio el gate de lo que escribio el modelo, y la
+        unica regla posible seria prohibirlos todos, lo que rompe cualquier
+        gate que compile.
+        """
+
+        self.ignored_baseline = self._ignored_paths()
+
     def collect_patch(self, protected_prefixes: tuple[str, ...]) -> PatchOutcome:
         worktree = self._require_worktree()
+        # Un fichero ignorado nunca entra en el diff, asi que no puede llegar al
+        # repo de origen — pero si vive en el arbol donde corren los gates, y un
+        # gate ejecuta el codigo del modelo. Lo que se veta es que el escritor
+        # los cree, no que existan.
+        new_ignored = sorted(self._ignored_paths() - self.ignored_baseline)
+        if new_ignored:
+            raise WriterError(
+                "WRITE_SCOPE_VIOLATION", f"writer created ignored path: {new_ignored[0]}"
+            )
         tracked = _git(worktree, ["diff", "--name-only", "-z", "HEAD"]).split(b"\0")
         untracked = _git(worktree, ["ls-files", "--others", "--exclude-standard", "-z"]).split(b"\0")
         raw_paths = sorted({value.decode("utf-8", "strict") for value in tracked + untracked if value})

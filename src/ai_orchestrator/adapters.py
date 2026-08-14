@@ -16,7 +16,13 @@ from typing import Any
 
 from ai_orchestrator.credentials import minimax_runtime_key, omniroute_runtime_key
 from ai_orchestrator.kimi_acp import AcpError, run_kimi_acp
-from ai_orchestrator.models import RouteDecision, RunResult, TaskSpec, ensure_private_directory
+from ai_orchestrator.models import (
+    NATIVE_WRITER_PROFILES,
+    RouteDecision,
+    RunResult,
+    TaskSpec,
+    ensure_private_directory,
+)
 from ai_orchestrator.supervisor import ProcessOutcome, run_supervised
 from ai_orchestrator.writer import (
     WorktreeTransaction,
@@ -331,8 +337,17 @@ def _run_once(
         except AcpError as exc:
             return ProcessOutcome(1, b"", str(exc).encode("utf-8")), None, False
     if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
+        # El montaje sigue al perfil. Estaba cableado a False, lo que convertia
+        # el parametro en codigo muerto: un escritor nativo recibia el arbol en
+        # solo-lectura y no podia escribir lo que --approval-mode auto-edit le
+        # decia que escribiera. La contencion no es el montaje, es
+        # collect_patch: arbol desechable, allowlist, .git y symlinks vetados.
+        writable = (
+            task.write_mode != "read_only"
+            and decision.execution_profile in NATIVE_WRITER_PROFILES
+        )
         command, sandbox_environment = _qwen_sandbox_command(
-            command, cwd, writable=False
+            command, cwd, writable=writable
         )
         environment.update(sandbox_environment)
     outcome = run_supervised(
@@ -527,6 +542,10 @@ def execute(
                 patch_transport = decision.execution_profile == "patch_api_writer"
                 writer_input = _writer_prompt(task, prompt, patch_only=patch_transport)
                 while True:
+                    # Antes de cada pasada del escritor, no una sola vez: los
+                    # gates de la vuelta anterior dejan artefactos ignorados y
+                    # no son cosa del modelo.
+                    transaction.snapshot_ignored()
                     outcome, reported, provenance = _run_once(
                         task,
                         decision,

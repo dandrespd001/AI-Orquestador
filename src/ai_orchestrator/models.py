@@ -23,10 +23,20 @@ ALLOWED_WRITE_MODES = {"read_only", "validated_patch", "validated_apply"}
 ALLOWED_TRUST_TIERS = {"official_subscription", "local", "web_free"}
 ALLOWED_EXECUTION_PROFILES = {
     "native_writer",
+    # Edita el arbol de trabajo como native_writer —y por eso puede iterar,
+    # hacer fase roja y tocar ficheros grandes, cosa que un escritor por parche
+    # no puede— pero NUNCA auto-aplica al repo de origen: termina siempre en
+    # PATCH_READY para que lo revise el Arquitecto. Los dos privilegios venian
+    # empaquetados en native_writer; esto los separa.
+    "native_patch_writer",
     "patch_api_writer",
     "kimi_acp_writer",
     "read_only",
 }
+# Perfiles que editan el arbol de trabajo directamente. Solo estos reciben un
+# montaje escribible. Que un perfil este aqui no implica que pueda auto-aplicar
+# al repo de origen: eso lo decide `native_writer` a solas, en adapters.py.
+NATIVE_WRITER_PROFILES = frozenset({"native_writer", "native_patch_writer"})
 ALLOWED_MODEL_CAPABILITIES = {"read", "write", "tools"}
 ALLOWED_REASONING_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 

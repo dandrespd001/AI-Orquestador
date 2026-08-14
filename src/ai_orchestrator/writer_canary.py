@@ -13,7 +13,12 @@ from typing import Any
 
 from ai_orchestrator.adapters import execute
 from ai_orchestrator.config import load_models
-from ai_orchestrator.models import ContractError, RouteDecision, TaskSpec
+from ai_orchestrator.models import (
+    ALLOWED_EXECUTION_PROFILES,
+    ContractError,
+    RouteDecision,
+    TaskSpec,
+)
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -28,15 +33,29 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def run_writer_canaries(
-    model_id: str, *, attempts: int = 5, timeout_seconds: int = 120
+    model_id: str,
+    *,
+    attempts: int = 5,
+    timeout_seconds: int = 120,
+    execution_profile: str | None = None,
 ) -> dict[str, Any]:
+    """Cinco pasadas desechables que deciden si un modelo puede escribir.
+
+    ``execution_profile`` mide un perfil que el modelo todavia no tiene en
+    models.toml. Sin el habria que promover antes de medir, que es el orden
+    contrario al que exige la politica: permitido no es promovido.
+    """
+
     if not 1 <= attempts <= 10:
         raise ValueError("writer canary attempts must be between 1 and 10")
     models = load_models()
     if model_id not in models:
         raise ContractError(f"unknown model: {model_id}")
     model = models[model_id]
-    if "write" not in model.capabilities or model.execution_profile == "read_only":
+    if execution_profile is not None and execution_profile not in ALLOWED_EXECUTION_PROFILES:
+        raise ContractError(f"unknown execution profile: {execution_profile}")
+    probed_profile = execution_profile or model.execution_profile
+    if "write" not in model.capabilities or probed_profile == "read_only":
         raise ContractError(f"model is not configured for writing: {model_id}")
 
     rows: list[dict[str, Any]] = []
@@ -48,11 +67,18 @@ def run_writer_canaries(
             _git(repo, "init", "-q")
             _git(repo, "config", "user.email", "canary@example.invalid")
             _git(repo, "config", "user.name", "AI Orchestrator Canary")
+            # Editar un fichero rastreado, no crear uno. Medido el 2026-08-14:
+            # Qwen 0.21.12 en --bare no expone `write_file` —solo `edit` y
+            # `notebook_edit`— asi que pedir un fichero nuevo devuelve
+            # NO_CHANGES aunque la ruta de escritura funcione. Y el trabajo
+            # real es editar ficheros que ya existen.
+            (repo / "canary.txt").write_text("PLACEHOLDER\n", encoding="utf-8")
             (repo / "prompt.txt").write_text(
-                f"Create canary.txt containing exactly {expected} followed by a newline.",
+                f"Replace the contents of canary.txt with exactly {expected} "
+                "followed by a newline.",
                 encoding="utf-8",
             )
-            _git(repo, "add", "prompt.txt")
+            _git(repo, "add", "prompt.txt", "canary.txt")
             _git(repo, "commit", "-qm", "canary baseline")
             task = TaskSpec.from_mapping(
                 {
@@ -89,7 +115,7 @@ def run_writer_canaries(
                 fallback_allowed=False,
                 write_mode=task.write_mode,
                 trust_tier=model.trust_tier,
-                execution_profile=model.execution_profile,
+                execution_profile=probed_profile,
             )
             result, patch = execute(
                 task,
@@ -125,6 +151,10 @@ def run_writer_canaries(
         "model": model.id,
         "provider": model.provider,
         "trust_tier": model.trust_tier,
+        # Sin esto el recibo no dice que ruta se midio, y un recibo que no
+        # identifica lo que midio no es evidencia de nada.
+        "execution_profile": probed_profile,
+        "configured_execution_profile": model.execution_profile,
         "attempts": attempts,
         "passed": passed_count,
         "status": "PASSED" if passed_count == attempts else "FAILED",
