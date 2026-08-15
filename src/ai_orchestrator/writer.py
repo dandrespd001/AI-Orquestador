@@ -128,6 +128,41 @@ class WorktreeTransaction:
 
         self.ignored_baseline = self._ignored_paths()
 
+    def discard_tool_state(self, directories: tuple[str, ...]) -> tuple[str, ...]:
+        """Borrar el estado que el CLI ejecutor escribe en el propio workspace.
+
+        Qwen crea `<workspace>/.qwen/settings.json` al aprobar una edicion.
+        No es trabajo del modelo y no puede serlo: `.qwen` esta entre las rutas
+        protegidas del perfil, asi que nunca podria entregarse. Contarlo agota
+        el tope de ficheros y hace que el trabajo bueno se rechace por la
+        basura de la herramienta — medido el 2026-08-14 sobre step.hpp.
+
+        Solo se borran directorios que el ORQUESTADOR nombra por transporte,
+        nunca rutas que venga en el encargo, y siempre dentro del worktree
+        desechable.
+        """
+
+        worktree = self._require_worktree()
+        restored: list[str] = []
+        for name in directories:
+            if ".." in PurePosixPath(name).parts or PurePosixPath(name).is_absolute():
+                continue
+            candidate = worktree / name
+            if candidate.is_dir() and not candidate.is_symlink():
+                # Barre lo que el CLI dejo suelto y no estaba en HEAD.
+                shutil.rmtree(candidate, ignore_errors=True)
+            # Y devuelve a HEAD lo que SI estaba: en CHUNSA
+            # `.qwen/settings.json` esta rastreado y Qwen lo MODIFICA. Borrarlo
+            # no lo saca del conjunto de cambios, lo convierte en un borrado,
+            # que git sigue contando. Falla en silencio si la ruta no existe en
+            # HEAD, que es el caso de un directorio puramente de basura.
+            try:
+                _git(worktree, ["checkout", "HEAD", "--", name])
+            except WriterError:
+                pass
+            restored.append(name)
+        return tuple(restored)
+
     def collect_patch(self, protected_prefixes: tuple[str, ...]) -> PatchOutcome:
         worktree = self._require_worktree()
         # Un fichero ignorado nunca entra en el diff, asi que no puede llegar al
@@ -143,7 +178,14 @@ class WorktreeTransaction:
         untracked = _git(worktree, ["ls-files", "--others", "--exclude-standard", "-z"]).split(b"\0")
         raw_paths = sorted({value.decode("utf-8", "strict") for value in tracked + untracked if value})
         if len(raw_paths) > self.task.max_changed_files:
-            raise WriterError("WRITE_SCOPE_VIOLATION", "changed-file limit exceeded")
+            # Nombrar los ficheros, no solo el limite: sin ellos hay que gastar
+            # otra pasada contra el proveedor para saber cual sobra.
+            listed = ", ".join(raw_paths[:8])
+            raise WriterError(
+                "WRITE_SCOPE_VIOLATION",
+                f"changed-file limit exceeded: {len(raw_paths)} > "
+                f"{self.task.max_changed_files} [{listed}]",
+            )
         allowed = tuple(PurePosixPath(value) for value in self.task.allowed_write_paths)
         protected = tuple(PurePosixPath(value.strip("/")) for value in protected_prefixes)
         for raw in raw_paths:

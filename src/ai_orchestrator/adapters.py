@@ -176,6 +176,16 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
     raise AdapterError("HANDOFF_REQUIRED", f"unsupported supervised transport: {decision.transport}")
 
 
+# Cada CLI ejecutor escribe su propio estado dentro del workspace. No es
+# trabajo del modelo, y en el perfil chunsa cae ademas en rutas protegidas.
+TOOL_STATE_DIRECTORIES = {
+    "qwen_omniroute_cli": (".qwen",),
+    "qwen_minimax_cli": (".qwen",),
+    "codex_cli": (".codex",),
+    "claude_cli": (".claude",),
+}
+
+
 def _qwen_sandbox_command(
     command: list[str], worktree: Path, *, writable: bool = True
 ) -> tuple[list[str], dict[str, str]]:
@@ -246,9 +256,21 @@ def _writer_prompt(task: TaskSpec, prompt: bytes, *, patch_only: bool = False) -
             "then run deterministic gates.\n\n"
         )
     else:
+        # «Implement the requested change directly» resulto ambiguo: el
+        # 2026-08-14 ds/deepseek-v4-pro hizo 13 `read_file`, cero `edit`, y
+        # escribio las modificaciones en prosa («### Edit 1: Old: ... New:
+        # ...»). Tenia la herramienta y el arbol escribible. Hay que decir que
+        # aplique, que la prosa no cuenta, y que no explore: el transcrito de
+        # un escritor nativo tiene techo, y leer de mas es lo que lo revienta.
         policy = (
-            "You are editing an isolated Git worktree. Implement the requested change directly. "
+            "You are editing an isolated Git worktree. Apply the change with your file "
+            "editing tools (`edit`); do not describe it. Prose, a diff, or a summary of "
+            "the change is NOT a deliverable — only the edited files count, and a reply "
+            "that explains the edit without performing it counts as no work at all. "
             f"You may modify only these repository-relative paths: {paths}. "
+            "Read only the specific ranges the task cites; do not explore the repository "
+            "and never reproduce a whole file in your reply — your transcript has a size "
+            "limit and exceeding it discards the run. "
             "Do not run shell commands, start agents, use the web, change .git, or modify permission "
             "configuration. The orchestrator will run deterministic gates after you finish.\n\n"
         )
@@ -440,6 +462,14 @@ def _qwen_error(stdout: bytes, stderr: bytes) -> str | None:
     try:
         payload = json.loads(stdout.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
+        # Un transcrito CORTADO no es una salida malformada, y confundirlos
+        # manda a buscar el fallo al sitio equivocado. Medido el 2026-08-14
+        # sobre step.hpp: el CLI devolvio 65536 bytes exactos, partidos a mitad
+        # de una cadena. La firma es empezar como array y no cerrarlo; no se
+        # comprueba el 65536 porque el tope es de la herramienta y puede mover.
+        trimmed = stdout.strip()
+        if trimmed.startswith(b"[") and not trimmed.endswith(b"]"):
+            return "OUTPUT_TRUNCATED"
         return "MALFORMED_OUTPUT"
     if not isinstance(payload, list):
         return "MALFORMED_OUTPUT"
@@ -524,6 +554,7 @@ def execute(
     changed_files = 0
     repairs = 0
     gate_state: bool | None = None
+    error_detail: str | None = None
     reported: str | None = None
     provenance = False
     exit_code: int | None = None
@@ -557,6 +588,33 @@ def execute(
                     if process_status != "SUCCESS":
                         status, error_code = process_status, process_error
                         stdout = outcome.stdout
+                        # Para un escritor NATIVO el arbol es el entregable y la
+                        # envoltura es charla: si el CLI se corta pero los
+                        # ficheros ya estan editados, tirarlos sin mirarlos
+                        # pierde trabajo hecho. Para un escritor por parche no
+                        # aplica —su entregable ES la envoltura—, y ahi romper
+                        # es lo correcto. El rescate NUNCA se salta los gates ni
+                        # la validacion de alcance, y sale con un codigo propio
+                        # para que no se confunda con un exito limpio.
+                        if decision.execution_profile not in NATIVE_WRITER_PROFILES:
+                            break
+                        transaction.discard_tool_state(
+                            TOOL_STATE_DIRECTORIES.get(str(decision.transport), ())
+                        )
+                        salvaged = transaction.collect_patch(protected_prefixes)
+                        if not salvaged.patch:
+                            break
+                        stdout = salvaged.patch
+                        patch_sha256 = salvaged.sha256
+                        changed_files = len(salvaged.paths)
+                        gate_outcomes = run_gates(
+                            transaction.worktree,
+                            gate_commands,
+                            gate_timeout_seconds or task.timeout_seconds,
+                        )
+                        gate_state = gates_passed(gate_outcomes, len(gate_commands))
+                        if gate_state:
+                            status, error_code = "PATCH_READY", "WRITER_OUTPUT_UNUSABLE"
                         break
                     if not provenance:
                         status, error_code = "PROVENANCE_UNVERIFIED", "PROVENANCE_UNVERIFIED"
@@ -566,6 +624,9 @@ def execute(
                     if patch_transport:
                         transaction.apply_candidate_patch(_qwen_result_text(outcome.stdout))
 
+                    transaction.discard_tool_state(
+                        TOOL_STATE_DIRECTORIES.get(str(decision.transport), ())
+                    )
                     patch = transaction.collect_patch(protected_prefixes)
                     stdout = patch.patch
                     patch_sha256 = patch.sha256
@@ -614,6 +675,9 @@ def execute(
                     )
         except WriterError as exc:
             status, error_code = exc.code, exc.code
+            # El mensaje lo redacta este codigo, no el modelo: lleva la ruta
+            # ofensora o el limite superado, y nada mas.
+            error_detail = str(exc)[:200] or None
 
     finished = datetime.now(UTC)
     latency_ms = (time.monotonic_ns() - start_ns) // 1_000_000
@@ -646,6 +710,7 @@ def execute(
         exit_code=exit_code,
         provenance_verified=provenance,
         error_code=error_code,
+        error_detail=error_detail,
         changed_files=changed_files,
         patch_sha256=patch_sha256,
         repairs=repairs,

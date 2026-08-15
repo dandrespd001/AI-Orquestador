@@ -303,6 +303,12 @@ class RunResult:
     exit_code: int | None
     provenance_verified: bool
     error_code: str | None = None
+    # Detalle acotado del fallo, SOLO de errores que produce el orquestador
+    # (WriterError): la ruta que violo el alcance, el limite que se paso. Nunca
+    # lleva texto del modelo, asi que no retiene contenido. Sin esto un
+    # WRITE_SCOPE_VIOLATION obliga a gastar otra pasada entera para saber que
+    # fichero fue.
+    error_detail: str | None = None
     changed_files: int = 0
     patch_sha256: str | None = None
     repairs: int = 0
