@@ -1,0 +1,71 @@
+{
+  "attempts": 5,
+  "configured_execution_profile": "kimi_acp_writer",
+  "execution_profile": "kimi_acp_writer",
+  "kind": "writer_canary",
+  "model": "kimi-official",
+  "orchestrator_content_retained": false,
+  "passed": 5,
+  "promotion_ready": true,
+  "provider": "moonshot",
+  "results": [
+    {
+      "attempt": 1,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 23026,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "44aa3ed8ef48562394e252f785cf8e2ef6708b2fcb8a9a69dcd618bb4976ddf9",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 2,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 26850,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "b75d2b732b7f538a9b7787ee65d26dbef7e319ab75dd9b8fe463abd521e872ef",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 3,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 21172,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "ef17d1215a9173206bd333be84939b1f935549ba04d7e74c22178e1fcec2b1cb",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 4,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 18246,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "247effb52307c68f3ecc92c8abbde0969f9e06a492d18d06d6d448c32d2f71d3",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 5,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 18813,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "844db36c47283d1d1725b05ba4a42ef24f819926e7e1a9a3d1c07b8dca977a2d",
+      "provenance_verified": true,
+      "status": "PASSED"
+    }
+  ],
+  "schema_version": 1,
+  "status": "PASSED",
+  "trust_tier": "official_subscription"
+}

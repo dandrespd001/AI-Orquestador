@@ -14,7 +14,7 @@ from ai_orchestrator.config import (
     load_roles,
     validate_configuration,
 )
-from ai_orchestrator.models import ContractError, TaskSpec
+from ai_orchestrator.models import NATIVE_WRITER_PROFILES, ContractError, TaskSpec
 from ai_orchestrator.routing import select_route
 
 
@@ -80,7 +80,13 @@ class ContractsAndRoutingTests(unittest.TestCase):
         )
         self.assertEqual("deepseek-v4-flash", decision.selected_model)
         self.assertEqual("qwen_omniroute_cli", decision.transport)
-        self.assertEqual("patch_api_writer", decision.execution_profile)
+        # 2026-08-18: Flash pasa a `native_patch_writer` (canario 5/5, decision
+        # de coste del Director). El test afirmaba el perfil CONCRETO y se puso
+        # rojo al promoverlo — codificaba el estado, no la propiedad. Lo que de
+        # verdad protege es que un escritor externo NUNCA auto-aplique: eso lo
+        # decide `native_writer` a solas, y Flash no lo es ni debe serlo.
+        self.assertIn(decision.execution_profile, NATIVE_WRITER_PROFILES)
+        self.assertNotEqual("native_writer", decision.execution_profile)
         self.assertTrue(decision.auto_execute)
         self.assertFalse(decision.fallback_allowed)
 
@@ -223,7 +229,10 @@ class ContractsAndRoutingTests(unittest.TestCase):
             profile,
         )
         self.assertEqual("deepseek-v4-flash", decision.selected_model)
-        self.assertEqual("patch_api_writer", decision.execution_profile)
+        # Ver la nota de arriba: se comprueba la propiedad (escribe en el arbol
+        # pero no auto-aplica), no el perfil concreto.
+        self.assertIn(decision.execution_profile, NATIVE_WRITER_PROFILES)
+        self.assertNotEqual("native_writer", decision.execution_profile)
         self.assertEqual("gpt-5.6-sol", decision.reviewer_model)
         self.assertEqual("high", decision.reasoning_effort)
         self.assertEqual("xhigh", decision.reviewer_reasoning_effort)
@@ -239,21 +248,30 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertFalse(decision.auto_execute)
         self.assertEqual("HANDOFF_REQUIRED", decision.status)
 
-    def test_long_context_uses_minimax_and_still_skips_unavailable_kimi(self) -> None:
+    def test_long_context_uses_minimax_even_con_kimi_disponible(self) -> None:
         # 2026-08-12: MiniMax pasa a `available` tras rotar la credencial,
         # cifrarla con systemd-creds y aprobar el canario, asi que ya NO se
-        # salta. Lo que este test sigue protegiendo es que kimi NO se
-        # autoejecuta nunca aunque este listado en el rol.
+        # salta.
+        #
+        # 2026-08-18: kimi-official pasa a `available` (cuota del Director,
+        # canario 5/5). El test ANTERIOR afirmaba `unavailable["kimi-official"]
+        # == "quota_unavailable"` y se puso rojo al promoverlo — codificaba el
+        # estado, no la propiedad. Lo que de verdad protege es el ORDEN del rol:
+        # MiniMax primero en long_context, y kimi detras aunque este disponible.
+        models = load_models()
+        self.assertEqual("available", models["kimi-official"].status)
         decision = select_route(
             self.task(task_type="long_context"),
-            load_models(),
+            models,
             load_roles(),
             load_profile("default"),
         )
         self.assertEqual("MiniMax-M3", decision.selected_model)
         self.assertEqual("qwen_minimax_cli", decision.transport)
-        self.assertEqual("quota_unavailable", decision.unavailable["kimi-official"])
         self.assertNotIn("MiniMax-M3", decision.unavailable)
+        # Kimi ya no aparece como no disponible: es elegible y simplemente
+        # pierde por orden.
+        self.assertNotIn("kimi-official", decision.unavailable)
 
     def test_algoritmic_minimax_is_a_supervised_handoff_when_available(self) -> None:
         models = load_models()

@@ -112,7 +112,16 @@ max_sensitivity = "internal"
 max_concurrency = 3
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
-execution_profile = "patch_api_writer"
+# Promovido a escritor nativo acotado el 2026-08-18 con canario 5/5
+# (docs/receipts/deepseek-v4-flash-native-2026-08-18.json). Es el PRIMARIO de
+# bounded_cpp por decision de coste del Director: Pro cuesta 3,1x lo que Flash
+# ($0,435/$0,87 contra $0,14/$0,28 por millon) por 1,6 puntos de SWE-bench
+# Verified. Pro queda para encargos cortos o poco intensivos.
+#
+# Sin este perfil la regla NO ahorraria, romperia la delegacion: roles.toml ya
+# listaba Flash primero, y por patch_api_writer habria ido a la ruta HTTP que
+# agoto el presupuesto de razonamiento en todos los encargos reales del 08-14.
+execution_profile = "native_patch_writer"
 
 [[models]]
 id = "MiniMax-M3"
@@ -140,7 +149,11 @@ provider = "moonshot"
 transport = "kimi_cli"
 route_model = "kimi-code/k3"
 official = true
-status = "quota_unavailable"
+# Cuota confirmada por el Director el 2026-08-18 y sondeada en vivo (kimi 0.37.0
+# responde). Promovido con canario 5/5, promotion_ready=true
+# (docs/receipts/kimi-official-2026-08-18.json). Permitido no es promovido: el
+# recibo es lo que lo mueve, no la cuota.
+status = "available"
 roles = ["long_context", "research", "implementation", "godot_ui"]
 max_sensitivity = "internal"
 max_concurrency = 1
