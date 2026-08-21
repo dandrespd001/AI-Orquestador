@@ -183,14 +183,13 @@ class AdapterTests(unittest.TestCase):
         )
         self.assertEqual("PROVIDER_ERROR", _qwen_error(stdout, b""))
 
-    @patch(
-        "ai_orchestrator.adapters.shutil.which",
-        side_effect=lambda executable: f"/usr/bin/{executable}",
-    )
     @patch("ai_orchestrator.adapters.run_supervised")
-    def test_qwen_success_requires_valid_result_and_provenance(
-        self, run, _which
-    ) -> None:
+    def test_qwen_success_requires_valid_result_and_provenance(self, run) -> None:
+        qwen_root = self.root / "qwen-code-test"
+        (qwen_root / "bin").mkdir(parents=True)
+        qwen_wrapper = self.root / "bin" / "qwen"
+        qwen_wrapper.parent.mkdir()
+        qwen_wrapper.write_text(f'exec "{qwen_root}/bin/qwen" "$@"\n', encoding="utf-8")
         run.return_value = ProcessOutcome(
             0,
             b'[{"type":"system","model":"ds/deepseek-v4-flash"},'
@@ -204,7 +203,13 @@ class AdapterTests(unittest.TestCase):
             family="deepseek",
             transport="qwen_omniroute_cli",
         )
-        result, _ = execute(self.task, decision)
+        with patch(
+            "ai_orchestrator.adapters.shutil.which",
+            side_effect=lambda executable: (
+                "/usr/bin/bwrap" if executable == "bwrap" else str(qwen_wrapper)
+            ),
+        ):
+            result, _ = execute(self.task, decision)
         self.assertEqual("SUCCESS", result.status)
         self.assertTrue(result.provenance_verified)
         self.assertEqual(b"bounded task", run.call_args.kwargs["input_data"])
