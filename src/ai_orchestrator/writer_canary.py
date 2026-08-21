@@ -52,7 +52,10 @@ def run_writer_canaries(
     if model_id not in models:
         raise ContractError(f"unknown model: {model_id}")
     model = models[model_id]
-    if execution_profile is not None and execution_profile not in ALLOWED_EXECUTION_PROFILES:
+    if (
+        execution_profile is not None
+        and execution_profile not in ALLOWED_EXECUTION_PROFILES
+    ):
         raise ContractError(f"unknown execution profile: {execution_profile}")
     probed_profile = execution_profile or model.execution_profile
     if "write" not in model.capabilities or probed_profile == "read_only":
@@ -62,7 +65,9 @@ def run_writer_canaries(
     for attempt in range(1, attempts + 1):
         expected = "CANARY_" + secrets.token_hex(8)
         started = time.monotonic_ns()
-        with tempfile.TemporaryDirectory(prefix="ai-orchestrator-writer-canary-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="ai-orchestrator-writer-canary-"
+        ) as directory:
             repo = Path(directory)
             _git(repo, "init", "-q")
             _git(repo, "config", "user.email", "canary@example.invalid")
@@ -84,7 +89,9 @@ def run_writer_canaries(
                 {
                     "repo": str(repo),
                     "task_type": "boilerplate",
-                    "sensitivity": "public" if model.trust_tier == "web_free" else "internal",
+                    "sensitivity": "public"
+                    if model.trust_tier == "web_free"
+                    else "internal",
                     "prompt_file": "prompt.txt",
                     "output_contract": "unified_diff",
                     "write_mode": "validated_patch",
@@ -136,7 +143,9 @@ def run_writer_canaries(
                     "attempt": attempt,
                     "status": "PASSED" if passed else result.status,
                     "latency_ms": (time.monotonic_ns() - started) // 1_000_000,
-                    "patch_sha256": hashlib.sha256(patch).hexdigest() if patch else None,
+                    "patch_sha256": hashlib.sha256(patch).hexdigest()
+                    if patch
+                    else None,
                     "changed_files": result.changed_files,
                     "exit_code": result.exit_code,
                     "error_code": result.error_code,

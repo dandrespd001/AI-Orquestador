@@ -19,7 +19,14 @@ class QualityTests(unittest.TestCase):
     def test_network_isolation_uses_an_empty_user_namespace(self, _which) -> None:
         self.assertEqual(
             _network_denied_command(["promptfoo", "--version"]),
-            ["/usr/bin/unshare", "--user", "--map-root-user", "--net", "promptfoo", "--version"],
+            [
+                "/usr/bin/unshare",
+                "--user",
+                "--map-root-user",
+                "--net",
+                "promptfoo",
+                "--version",
+            ],
         )
 
     def test_promptfoo_environment_is_local_and_drops_credentials(self) -> None:

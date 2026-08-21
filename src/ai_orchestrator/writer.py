@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Self
 
 from ai_orchestrator.models import ContractError, TaskSpec, ensure_private_directory
 from ai_orchestrator.supervisor import run_supervised
@@ -42,8 +43,7 @@ def _git(repo: Path, args: list[str], *, input_data: bytes | None = None) -> byt
         ["git", "-C", str(repo), *args],
         input=input_data,
         stdin=None if input_data is not None else subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=30,
         check=False,
         env={
@@ -76,15 +76,21 @@ class WorktreeTransaction:
         self.worktree: Path | None = None
         self.ignored_baseline: frozenset[str] = frozenset()
 
-    def __enter__(self) -> "WorktreeTransaction":
-        top = Path(_git(self.source, ["rev-parse", "--show-toplevel"]).decode().strip()).resolve()
+    def __enter__(self) -> Self:
+        top = Path(
+            _git(self.source, ["rev-parse", "--show-toplevel"]).decode().strip()
+        ).resolve()
         if top != self.source:
-            raise WriterError("GIT_ROOT_REQUIRED", "task repo must be the Git worktree root")
+            raise WriterError(
+                "GIT_ROOT_REQUIRED", "task repo must be the Git worktree root"
+            )
         self.base_commit = _git(self.source, ["rev-parse", "HEAD"]).decode().strip()
         self.source_was_clean = not bool(
             _git(self.source, ["status", "--porcelain=v1", "--untracked-files=all"])
         )
-        self.root = Path(tempfile.mkdtemp(prefix=f"{self.task.task_id}-", dir=_temporary_root()))
+        self.root = Path(
+            tempfile.mkdtemp(prefix=f"{self.task.task_id}-", dir=_temporary_root())
+        )
         os.chmod(self.root, 0o700)
         self.worktree = self.root / "worktree"
         _git(
@@ -96,7 +102,15 @@ class WorktreeTransaction:
     def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
         if self.worktree is not None:
             subprocess.run(
-                ["git", "-C", str(self.source), "worktree", "remove", "--force", str(self.worktree)],
+                [
+                    "git",
+                    "-C",
+                    str(self.source),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(self.worktree),
+                ],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -113,8 +127,12 @@ class WorktreeTransaction:
 
     def _ignored_paths(self) -> frozenset[str]:
         worktree = self._require_worktree()
-        raw = _git(worktree, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"])
-        return frozenset(value.decode("utf-8", "replace") for value in raw.split(b"\0") if value)
+        raw = _git(
+            worktree, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"]
+        )
+        return frozenset(
+            value.decode("utf-8", "replace") for value in raw.split(b"\0") if value
+        )
 
     def snapshot_ignored(self) -> None:
         """Censar los ficheros ignorados antes de que corra el escritor.
@@ -172,11 +190,16 @@ class WorktreeTransaction:
         new_ignored = sorted(self._ignored_paths() - self.ignored_baseline)
         if new_ignored:
             raise WriterError(
-                "WRITE_SCOPE_VIOLATION", f"writer created ignored path: {new_ignored[0]}"
+                "WRITE_SCOPE_VIOLATION",
+                f"writer created ignored path: {new_ignored[0]}",
             )
         tracked = _git(worktree, ["diff", "--name-only", "-z", "HEAD"]).split(b"\0")
-        untracked = _git(worktree, ["ls-files", "--others", "--exclude-standard", "-z"]).split(b"\0")
-        raw_paths = sorted({value.decode("utf-8", "strict") for value in tracked + untracked if value})
+        untracked = _git(
+            worktree, ["ls-files", "--others", "--exclude-standard", "-z"]
+        ).split(b"\0")
+        raw_paths = sorted(
+            {value.decode("utf-8", "strict") for value in tracked + untracked if value}
+        )
         if len(raw_paths) > self.task.max_changed_files:
             # Nombrar los ficheros, no solo el limite: sin ellos hay que gastar
             # otra pasada contra el proveedor para saber cual sobra.
@@ -187,20 +210,30 @@ class WorktreeTransaction:
                 f"{self.task.max_changed_files} [{listed}]",
             )
         allowed = tuple(PurePosixPath(value) for value in self.task.allowed_write_paths)
-        protected = tuple(PurePosixPath(value.strip("/")) for value in protected_prefixes)
+        protected = tuple(
+            PurePosixPath(value.strip("/")) for value in protected_prefixes
+        )
         for raw in raw_paths:
             path = PurePosixPath(raw)
             if path.is_absolute() or ".." in path.parts or path.parts[0] == ".git":
-                raise WriterError("WRITE_SCOPE_VIOLATION", f"unsafe changed path: {raw}")
+                raise WriterError(
+                    "WRITE_SCOPE_VIOLATION", f"unsafe changed path: {raw}"
+                )
             if not any(path == prefix or prefix in path.parents for prefix in allowed):
-                raise WriterError("WRITE_SCOPE_VIOLATION", f"path outside write allowlist: {raw}")
+                raise WriterError(
+                    "WRITE_SCOPE_VIOLATION", f"path outside write allowlist: {raw}"
+                )
             if any(path == prefix or prefix in path.parents for prefix in protected):
-                raise WriterError("WRITE_SCOPE_VIOLATION", f"protected path changed: {raw}")
+                raise WriterError(
+                    "WRITE_SCOPE_VIOLATION", f"protected path changed: {raw}"
+                )
             candidate = worktree / raw
             current = candidate
             while current != worktree:
                 if current.is_symlink():
-                    raise WriterError("WRITE_SCOPE_VIOLATION", f"symlink path changed: {raw}")
+                    raise WriterError(
+                        "WRITE_SCOPE_VIOLATION", f"symlink path changed: {raw}"
+                    )
                 current = current.parent
 
         new_paths = [value.decode("utf-8", "strict") for value in untracked if value]
@@ -209,7 +242,9 @@ class WorktreeTransaction:
         patch = _git(worktree, ["diff", "--binary", "--no-ext-diff", "HEAD", "--"])
         if len(patch) > self.task.max_patch_bytes:
             raise WriterError("WRITE_SCOPE_VIOLATION", "patch-size limit exceeded")
-        numstat = _git(worktree, ["diff", "--numstat", "HEAD", "--"]).decode("utf-8", "replace")
+        numstat = _git(worktree, ["diff", "--numstat", "HEAD", "--"]).decode(
+            "utf-8", "replace"
+        )
         if any(line.startswith("-\t-\t") for line in numstat.splitlines()):
             raise WriterError("WRITE_SCOPE_VIOLATION", "binary changes are not allowed")
         return PatchOutcome(
@@ -228,7 +263,9 @@ class WorktreeTransaction:
 
         worktree = self._require_worktree()
         if not patch.strip() or len(patch) > self.task.max_patch_bytes:
-            raise WriterError("MALFORMED_PATCH", "candidate patch is empty or too large")
+            raise WriterError(
+                "MALFORMED_PATCH", "candidate patch is empty or too large"
+            )
         _git(worktree, ["apply", "--check", "--binary", "-"], input_data=patch)
         _git(worktree, ["apply", "--binary", "-"], input_data=patch)
 
@@ -236,12 +273,16 @@ class WorktreeTransaction:
         if not self.source_was_clean:
             return False
         head = _git(self.source, ["rev-parse", "HEAD"]).decode().strip()
-        clean = not bool(_git(self.source, ["status", "--porcelain=v1", "--untracked-files=all"]))
+        clean = not bool(
+            _git(self.source, ["status", "--porcelain=v1", "--untracked-files=all"])
+        )
         return head == self.base_commit and clean
 
     def apply(self, patch: bytes) -> None:
         if not self.can_apply():
-            raise WriterError("DIRTY_WORKTREE", "source worktree changed during the model run")
+            raise WriterError(
+                "DIRTY_WORKTREE", "source worktree changed during the model run"
+            )
         _git(self.source, ["apply", "--check", "--binary", "-"], input_data=patch)
         _git(self.source, ["apply", "--binary", "-"], input_data=patch)
 
@@ -309,16 +350,25 @@ def _sandboxed_gate(argv: list[str], worktree: Path) -> list[str]:
         )
     sandboxed = [
         bwrap,
-        "--unshare-all",          # no network: closes the exfiltration channel
+        "--unshare-all",  # no network: closes the exfiltration channel
         "--die-with-parent",
         "--new-session",
-        "--ro-bind", "/", "/",
-        "--tmpfs", "/home",
-        "--tmpfs", "/tmp",
-        "--proc", "/proc",
-        "--dev", "/dev",
-        "--bind", str(worktree), str(worktree),
-        "--dir", GATE_HOME,
+        "--ro-bind",
+        "/",
+        "/",
+        "--tmpfs",
+        "/home",
+        "--tmpfs",
+        "/tmp",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--bind",
+        str(worktree),
+        str(worktree),
+        "--dir",
+        GATE_HOME,
     ]
     # Python derives its user site-packages from HOME, so a disposable HOME
     # loses them and toolchain gates that import jsonschema/PyYAML break. Mount
@@ -332,7 +382,9 @@ def _sandboxed_gate(argv: list[str], worktree: Path) -> list[str]:
     return sandboxed
 
 
-def run_gates(worktree: Path, commands: tuple[str, ...], timeout_seconds: int) -> tuple[GateOutcome, ...]:
+def run_gates(
+    worktree: Path, commands: tuple[str, ...], timeout_seconds: int
+) -> tuple[GateOutcome, ...]:
     if not 1 <= timeout_seconds <= 1800:
         raise ContractError("gate timeout_seconds must be between 1 and 1800")
     outcomes: list[GateOutcome] = []
@@ -355,15 +407,19 @@ def run_gates(worktree: Path, commands: tuple[str, ...], timeout_seconds: int) -
             timeout_seconds=timeout_seconds,
         )
         output = _sanitized(result.stdout + b"\n" + result.stderr)
-        outcomes.append(GateOutcome(command, result.returncode, output, result.timed_out))
+        outcomes.append(
+            GateOutcome(command, result.returncode, output, result.timed_out)
+        )
         if result.returncode != 0 or result.timed_out:
             break
     return tuple(outcomes)
 
 
 def gates_passed(outcomes: tuple[GateOutcome, ...], expected_count: int) -> bool:
-    return expected_count > 0 and len(outcomes) == expected_count and all(
-        value.returncode == 0 and not value.timed_out for value in outcomes
+    return (
+        expected_count > 0
+        and len(outcomes) == expected_count
+        and all(value.returncode == 0 and not value.timed_out for value in outcomes)
     )
 
 
@@ -374,5 +430,5 @@ def repair_prompt(task_prompt: bytes, outcomes: tuple[GateOutcome, ...]) -> byte
     return (
         task_prompt
         + b"\n\nThe previous edit did not pass the orchestrator gate. "
-        + f"Repair only the allowed files. Failed gate: {command}\n{detail}".encode("utf-8")
+        + f"Repair only the allowed files. Failed gate: {command}\n{detail}".encode()
     )

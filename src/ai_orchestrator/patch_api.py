@@ -38,6 +38,10 @@ def _finish_reason(response: dict[str, object]) -> str | None:
     try:
         return str(response["choices"][0]["finish_reason"])  # type: ignore[index]
     except (KeyError, IndexError, TypeError, ValueError):
+        details = response.get("incomplete_details")
+        if response.get("status") == "incomplete" and isinstance(details, dict):
+            reason = details.get("reason")
+            return str(reason) if reason is not None else "length"
         return None
 
 
@@ -75,7 +79,9 @@ def _tracked_context_paths(task: TaskSpec, worktree: Path) -> tuple[str, ...]:
                 check=False,
             )
             if completed.returncode != 0:
-                raise PatchApiError("could not enumerate bounded worktree context", "CONTEXT_UNREADABLE")
+                raise PatchApiError(
+                    "could not enumerate bounded worktree context", "CONTEXT_UNREADABLE"
+                )
             selected.update(
                 value.decode("utf-8", "strict")
                 for value in completed.stdout.split(b"\0")
@@ -114,7 +120,9 @@ def _bounded_context(task: TaskSpec, worktree: Path) -> str:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        chunks.append(f"--- BEGIN FILE: {relative} ---\n{text}\n--- END FILE: {relative} ---")
+        chunks.append(
+            f"--- BEGIN FILE: {relative} ---\n{text}\n--- END FILE: {relative} ---"
+        )
         remaining -= len(raw)
     return "\n\n".join(chunks)
 
@@ -136,18 +144,27 @@ def _request_json(
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             raw = response.read(4_000_001)
     except urllib.error.HTTPError as exc:
-        raise PatchApiError(f"provider HTTP error {exc.code}",
-                            _http_code(exc.code)) from exc
+        raise PatchApiError(
+            f"provider HTTP error {exc.code}", _http_code(exc.code)
+        ) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise PatchApiError("provider connection failed", "PROVIDER_UNREACHABLE") from exc
+        raise PatchApiError(
+            "provider connection failed", "PROVIDER_UNREACHABLE"
+        ) from exc
     if len(raw) > 4_000_000:
-        raise PatchApiError("provider response exceeded size limit", "PROVIDER_RESPONSE_TOO_LARGE")
+        raise PatchApiError(
+            "provider response exceeded size limit", "PROVIDER_RESPONSE_TOO_LARGE"
+        )
     try:
         decoded = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise PatchApiError("provider returned malformed JSON", "PROVIDER_MALFORMED_JSON") from exc
+        raise PatchApiError(
+            "provider returned malformed JSON", "PROVIDER_MALFORMED_JSON"
+        ) from exc
     if not isinstance(decoded, dict):
-        raise PatchApiError("provider returned an invalid response envelope", "PROVIDER_BAD_ENVELOPE")
+        raise PatchApiError(
+            "provider returned an invalid response envelope", "PROVIDER_BAD_ENVELOPE"
+        )
     return decoded
 
 
@@ -160,12 +177,16 @@ def generate_patch(
 ) -> PatchApiOutcome:
     context = _bounded_context(task, worktree)
     instruction = prompt.decode("utf-8", "strict")
-    user_message = instruction + ("\n\nBOUNDED REPOSITORY CONTEXT\n" + context if context else "")
+    user_message = instruction + (
+        "\n\nBOUNDED REPOSITORY CONTEXT\n" + context if context else ""
+    )
     model = str(decision.requested_route_model)
     if decision.transport == "qwen_omniroute_cli":
         key = omniroute_runtime_key()
         if not key:
-            raise PatchApiError("OmniRoute credential unavailable", "CREDENTIAL_UNAVAILABLE")
+            raise PatchApiError(
+                "OmniRoute credential unavailable", "CREDENTIAL_UNAVAILABLE"
+            )
         response = _request_json(
             "http://127.0.0.1:20128/v1/chat/completions",
             headers={"Authorization": "Bearer " + key},
@@ -181,34 +202,51 @@ def generate_patch(
         try:
             content = response["choices"][0]["message"]["content"]  # type: ignore[index]
         except (KeyError, IndexError, TypeError) as exc:
-            raise PatchApiError("OmniRoute response contained no patch", "PROVIDER_NO_CHOICES") from exc
+            raise PatchApiError(
+                "OmniRoute response contained no patch", "PROVIDER_NO_CHOICES"
+            ) from exc
         reported = response.get("model")
     elif decision.transport == "qwen_minimax_cli":
         key = minimax_runtime_key()
         if not key:
-            raise PatchApiError("MiniMax credential unavailable", "CREDENTIAL_UNAVAILABLE")
+            raise PatchApiError(
+                "MiniMax credential unavailable", "CREDENTIAL_UNAVAILABLE"
+            )
         response = _request_json(
-            "https://api.minimax.io/anthropic/v1/messages",
-            headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+            "https://api.minimax.io/v1/responses",
+            headers={"Authorization": "Bearer " + key},
             payload={
                 "model": model,
-                "max_tokens": 16_384,
-                "temperature": 0,
-                "messages": [{"role": "user", "content": user_message}],
+                "input": user_message,
+                "max_output_tokens": 16_384,
+                "reasoning": {"effort": "none"},
+                "store": False,
             },
             timeout_seconds=task.timeout_seconds,
         )
-        blocks = response.get("content")
-        content = None
-        if isinstance(blocks, list):
-            content = "".join(
-                str(block.get("text", ""))
-                for block in blocks
-                if isinstance(block, dict) and block.get("type") == "text"
-            )
+        content = response.get("output_text")
+        if not isinstance(content, str):
+            output = response.get("output")
+            parts: list[str] = []
+            if isinstance(output, list):
+                for item in output:
+                    if not isinstance(item, dict) or item.get("type") != "message":
+                        continue
+                    blocks = item.get("content")
+                    if not isinstance(blocks, list):
+                        continue
+                    parts.extend(
+                        str(block.get("text", ""))
+                        for block in blocks
+                        if isinstance(block, dict)
+                        and block.get("type") == "output_text"
+                    )
+            content = "".join(parts)
         reported = response.get("model")
     else:
-        raise PatchApiError("transport does not support the guarded patch API", "TRANSPORT_UNSUPPORTED")
+        raise PatchApiError(
+            "transport does not support the guarded patch API", "TRANSPORT_UNSUPPORTED"
+        )
     if not isinstance(content, str) or not content.strip():
         # A reasoning model can spend the ENTIRE completion budget thinking and
         # emit zero answer tokens. Measured on 2026-08-13 with a 79 KB request:
@@ -217,12 +255,14 @@ def generate_patch(
         # did not help and `reasoning_effort` was ignored by the gateway, so the
         # cap is upstream. Reported apart from a genuinely empty answer, because
         # the fix is different: shrink the request, not retry it.
-        if _finish_reason(response) == "length":
+        if _finish_reason(response) in {"length", "max_output_tokens"}:
             raise PatchApiError(
                 "provider spent its whole completion budget on reasoning",
                 "REASONING_BUDGET_EXHAUSTED",
             )
-        raise PatchApiError("provider returned no textual patch", "PROVIDER_EMPTY_PATCH")
+        raise PatchApiError(
+            "provider returned no textual patch", "PROVIDER_EMPTY_PATCH"
+        )
     if not isinstance(reported, str) or not reported:
         raise PatchApiError("provider did not report its model", "PROVENANCE_MISSING")
     return PatchApiOutcome(content.strip().encode("utf-8") + b"\n", reported)

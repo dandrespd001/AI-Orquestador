@@ -1,0 +1,200 @@
+schema_version = 1
+
+[[providers]]
+id = "openai"
+endpoint = "cli://codex"
+protocol = "official_cli"
+models = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+authentication = "oauth_official_store"
+quota = "subscription_included"
+trust = "official_subscription"
+capabilities = ["read", "write", "tools"]
+canary = "codex_cli"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "anthropic"
+endpoint = "cli://claude"
+protocol = "official_cli"
+models = ["claude-opus", "claude-sonnet"]
+authentication = "oauth_official_store"
+quota = "subscription_included"
+trust = "official_subscription"
+capabilities = ["read", "write", "tools"]
+canary = "claude_cli"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "deepseek"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["deepseek-v4-pro", "deepseek-v4-flash"]
+authentication = "systemd_credential_broker"
+quota = "subscription_included"
+trust = "official_subscription"
+capabilities = ["read", "write", "tools", "cache"]
+canary = "deepseek"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "minimax"
+endpoint = "https://api.minimax.io/v1"
+protocol = "openai_responses"
+models = ["MiniMax-M3"]
+authentication = "systemd_credential_broker"
+quota = "included_or_preapproved_only"
+trust = "official_subscription"
+capabilities = ["read", "write", "long_context"]
+canary = "minimax"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "moonshot"
+endpoint = "cli://kimi"
+protocol = "oauth_cli"
+models = ["kimi-official"]
+authentication = "oauth_official_store"
+quota = "subscription_included"
+trust = "official_subscription"
+capabilities = ["read", "write", "tools", "dynamic_models"]
+canary = "moonshot"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "abacus"
+endpoint = "cli://abacusai@2.6.9"
+protocol = "oauth_cli"
+# Observados en la cuenta autenticada el 2026-08-20. La presencia en el
+# catalogo no implica ruta automatica: abacus.py mantiene el allowlist, exige
+# opt-in para GLM 5.3 y nunca hace fallback silencioso. Los nombres reales del
+# selector CLI se conservan como route_model en models.toml.
+models = ["abacus-grok-4.6", "abacus-qwen3.8-max", "abacus-qwen3.8-27b", "abacus-glm-5.3"]
+authentication = "human_cli_login"
+quota = "pro_included_credits_only"
+trust = "official_subscription"
+capabilities = ["read", "write", "tools", "credits"]
+canary = "abacus"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "fx"
+endpoint = "cli://fx@0.0.4"
+protocol = "oauth_cli"
+models = ["fx-glm-5.2-promo"]
+authentication = "oauth_official_store"
+quota = "promotion_free_until_2026-09-01"
+trust = "official_subscription"
+capabilities = ["read", "long_context"]
+canary = "fx"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "omniroute"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["ds/deepseek-v4-flash"]
+authentication = "systemd_credential_broker"
+quota = "provider_specific_included_only"
+trust = "official_subscription"
+capabilities = ["read", "write", "routing"]
+canary = "omniroute"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "qwen"
+endpoint = "cli://qwen"
+protocol = "official_cli"
+models = ["qwen-client"]
+authentication = "delegated_provider_route"
+quota = "provider_specific_included_only"
+trust = "official_subscription"
+capabilities = ["read", "write", "tools"]
+canary = "qwen_cli"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "opencode"
+endpoint = "cli://opencode"
+protocol = "official_cli"
+models = ["opencode-client"]
+authentication = "oauth_official_store"
+quota = "provider_specific_included_only"
+trust = "official_subscription"
+capabilities = ["read", "write", "tools"]
+canary = "opencode_cli"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "local-ai"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["local-qwen36-agent"]
+authentication = "local_gateway"
+quota = "local_free"
+trust = "local"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "antigravity"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["gemini-free-fast"]
+authentication = "oauth_official_store"
+quota = "free_route"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "qwen-web"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["qwen-web-max"]
+authentication = "oauth_official_store"
+quota = "free_route"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "huggingchat"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["kimi-free-code"]
+authentication = "oauth_official_store"
+quota = "free_route"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "zenmux-free"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["kat-coder-free"]
+authentication = "oauth_official_store"
+quota = "free_route"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false

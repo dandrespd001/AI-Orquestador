@@ -34,7 +34,11 @@ def _run_echo(root: Path, value: bytes) -> bool:
 
 def _run_eof(root: Path) -> bool:
     outcome = run_supervised(
-        [sys.executable, "-c", "import sys; raise SystemExit(0 if not sys.stdin.buffer.read(1) else 1)"],
+        [
+            sys.executable,
+            "-c",
+            "import sys; raise SystemExit(0 if not sys.stdin.buffer.read(1) else 1)",
+        ],
         input_data=None,
         cwd=root,
         env={"PATH": os.environ.get("PATH", "")},
@@ -45,10 +49,22 @@ def _run_eof(root: Path) -> bool:
 
 def _qwen_open_stdin_check(root: Path) -> dict[str, object]:
     command = [
-        "qwen", "--auth-type", "openai", "--bare", "--output-format", "json",
-        "--approval-mode", "plan", "--max-wall-time", "3s",
-        "--max-session-turns", "1", "--max-tool-calls", "0",
-        "--model", "ds/deepseek-v4-flash",
+        "qwen",
+        "--auth-type",
+        "openai",
+        "--bare",
+        "--output-format",
+        "json",
+        "--approval-mode",
+        "plan",
+        "--max-wall-time",
+        "3s",
+        "--max-session-turns",
+        "1",
+        "--max-tool-calls",
+        "0",
+        "--model",
+        "ds/deepseek-v4-flash",
     ]
     environment = {
         "HOME": os.environ.get("HOME", str(root)),
@@ -89,7 +105,12 @@ def main() -> int:
         sequential = [_run_echo(root, f"case-{index}".encode()) for index in range(50)]
         eof = [_run_eof(root) for _ in range(25)]
         with ThreadPoolExecutor(max_workers=5) as pool:
-            concurrent = list(pool.map(lambda index: _run_echo(root, f"parallel-{index}".encode()), range(25)))
+            concurrent = list(
+                pool.map(
+                    lambda index: _run_echo(root, f"parallel-{index}".encode()),
+                    range(25),
+                )
+            )
         qwen = _qwen_open_stdin_check(root) if args.qwen_open_stdin else None
     checks = sequential + eof + concurrent
     payload = {

@@ -1,6 +1,7 @@
 schema_version = 1
 name = "chunsa"
 repo_root = "/home/adquiod/Imágenes/Project/CHUNSA001"
+architect_model = "claude-opus"
 public_repository = true
 auto_execute_sensitivities = ["public", "internal"]
 allowed_models = [
@@ -13,6 +14,7 @@ allowed_models = [
   "deepseek-v4-pro",
   "MiniMax-M3",
   "kimi-official",
+  "fx-glm-5.2-promo",
   "local-qwen36-agent",
   "gemini-free-fast",
   "qwen-web-max",
@@ -50,3 +52,7 @@ deterministic_gates = [
   "nice -n 19 ctest --test-dir build-gcc --output-on-failure",
 ]
 minimax_mode = "direct"
+allow_paid_routes = false
+max_marginal_cost_usd = 0.0
+capability_packages = ["games"]
+extensions = []

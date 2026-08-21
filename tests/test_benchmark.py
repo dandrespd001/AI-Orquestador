@@ -19,7 +19,12 @@ from ai_orchestrator.models import ContractError
 class GatewayBenchmarkTests(unittest.TestCase):
     def _manifest(self, root: Path, base_url: str) -> Path:
         (root / "payload.json").write_text(
-            json.dumps({"model": "mock-model", "messages": [{"role": "user", "content": "sentinel"}]}),
+            json.dumps(
+                {
+                    "model": "mock-model",
+                    "messages": [{"role": "user", "content": "sentinel"}],
+                }
+            ),
             encoding="utf-8",
         )
         path = root / "benchmark.toml"

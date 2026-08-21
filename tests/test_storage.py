@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 import tempfile
 import unittest
@@ -36,7 +35,9 @@ class StorageTests(unittest.TestCase):
                 connection.execute("PRAGMA journal_mode=WAL")
                 connection.execute("PRAGMA synchronous=FULL")
                 connection.execute("PRAGMA secure_delete=ON")
-                connection.execute("CREATE TABLE events (id INTEGER PRIMARY KEY, value TEXT)")
+                connection.execute(
+                    "CREATE TABLE events (id INTEGER PRIMARY KEY, value TEXT)"
+                )
                 connection.executemany(
                     "INSERT INTO events(value) VALUES (?)",
                     [("x" * 200,) for _ in range(500)],

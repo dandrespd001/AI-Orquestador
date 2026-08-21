@@ -35,14 +35,23 @@ class WorktreeCase(unittest.TestCase):
         self.repo = Path(self.temp.name) / "repo"
         self.repo.mkdir()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        for key, value in (("user.email", "test@example.invalid"), ("user.name", "Test")):
-            subprocess.run(["git", "-C", str(self.repo), "config", key, value], check=True)
+        for key, value in (
+            ("user.email", "test@example.invalid"),
+            ("user.name", "Test"),
+        ):
+            subprocess.run(
+                ["git", "-C", str(self.repo), "config", key, value], check=True
+            )
         (self.repo / "src").mkdir()
         (self.repo / "src" / "value.txt").write_text("old\n", encoding="utf-8")
         (self.repo / "prompt.txt").write_text("change value", encoding="utf-8")
-        (self.repo / ".gitignore").write_text("build/\n__pycache__/\n", encoding="utf-8")
+        (self.repo / ".gitignore").write_text(
+            "build/\n__pycache__/\n", encoding="utf-8"
+        )
         subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "initial"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-qm", "initial"], check=True
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -104,13 +113,17 @@ class NativePatchWriterTests(WorktreeCase):
 
     def test_native_patch_writer_edits_instead_of_returning_a_diff(self) -> None:
         task = self.task(write_mode="validated_patch")
-        command = _command(task, self.decision(task, "native_patch_writer"), task.prompt_path())
+        command = _command(
+            task, self.decision(task, "native_patch_writer"), task.prompt_path()
+        )
         self.assertIn("auto-edit", command)
         self.assertNotIn("plan", command)
 
     @patch("ai_orchestrator.adapters.run_supervised")
     @patch("ai_orchestrator.adapters._qwen_sandbox_command")
-    def test_native_patch_writer_receives_a_writable_worktree(self, sandbox, run) -> None:
+    def test_native_patch_writer_receives_a_writable_worktree(
+        self, sandbox, run
+    ) -> None:
         sandbox.return_value = (["/bin/true"], {})
         run.return_value = ProcessOutcome(0, b"[]", b"")
         task = self.task(write_mode="validated_patch")
@@ -124,7 +137,9 @@ class NativePatchWriterTests(WorktreeCase):
 
     @patch("ai_orchestrator.adapters.run_supervised")
     @patch("ai_orchestrator.adapters._qwen_sandbox_command")
-    def test_read_only_task_never_receives_a_writable_worktree(self, sandbox, run) -> None:
+    def test_read_only_task_never_receives_a_writable_worktree(
+        self, sandbox, run
+    ) -> None:
         sandbox.return_value = (["/bin/true"], {})
         run.return_value = ProcessOutcome(0, b"[]", b"")
         task = self.task(write_mode="read_only", allowed_write_paths=[])
@@ -190,7 +205,9 @@ class IgnoredFileScopeTests(WorktreeCase):
         with WorktreeTransaction(task) as transaction:
             assert transaction.worktree is not None
             transaction.snapshot_ignored()
-            (transaction.worktree / "src" / "value.txt").write_text("new\n", encoding="utf-8")
+            (transaction.worktree / "src" / "value.txt").write_text(
+                "new\n", encoding="utf-8"
+            )
             (transaction.worktree / "build").mkdir()
             (transaction.worktree / "build" / "sitecustomize.py").write_text(
                 "raise SystemExit(0)\n", encoding="utf-8"
@@ -208,7 +225,9 @@ class IgnoredFileScopeTests(WorktreeCase):
             (transaction.worktree / "__pycache__").mkdir()
             (transaction.worktree / "__pycache__" / "m.pyc").write_bytes(b"\x00")
             transaction.snapshot_ignored()
-            (transaction.worktree / "src" / "value.txt").write_text("new\n", encoding="utf-8")
+            (transaction.worktree / "src" / "value.txt").write_text(
+                "new\n", encoding="utf-8"
+            )
             outcome = transaction.collect_patch((".git",))
         self.assertEqual(("src/value.txt",), outcome.paths)
         self.assertIn(b"+new", outcome.patch)
@@ -232,7 +251,9 @@ class TruncatedOutputTests(unittest.TestCase):
     def test_genuine_garbage_is_still_malformed(self) -> None:
         """El diagnostico nuevo no puede tragarse al viejo."""
 
-        self.assertEqual("MALFORMED_OUTPUT", _qwen_error(b"no soy json en absoluto", b""))
+        self.assertEqual(
+            "MALFORMED_OUTPUT", _qwen_error(b"no soy json en absoluto", b"")
+        )
         self.assertEqual("MALFORMED_OUTPUT", _qwen_error(b'{"type":"result"}', b""))
 
     def test_native_writer_is_told_to_use_its_editing_tool(self) -> None:
@@ -280,7 +301,7 @@ class ScopeDiagnosisTests(WorktreeCase):
         result, _ = execute(
             task,
             self.decision(task, "native_patch_writer"),
-            gate_commands=("python3 -c \"pass\"",),
+            gate_commands=('python3 -c "pass"',),
             protected_prefixes=(".git", ".env"),
         )
         self.assertEqual("WRITE_SCOPE_VIOLATION", result.status)
@@ -298,8 +319,12 @@ class ScopeDiagnosisTests(WorktreeCase):
         with WorktreeTransaction(task) as transaction:
             assert transaction.worktree is not None
             transaction.snapshot_ignored()
-            (transaction.worktree / "src" / "value.txt").write_text("new\n", encoding="utf-8")
-            (transaction.worktree / "src" / "otro.txt").write_text("otro\n", encoding="utf-8")
+            (transaction.worktree / "src" / "value.txt").write_text(
+                "new\n", encoding="utf-8"
+            )
+            (transaction.worktree / "src" / "otro.txt").write_text(
+                "otro\n", encoding="utf-8"
+            )
             with self.assertRaises(WriterError) as context:
                 transaction.collect_patch((".git",))
         message = str(context.exception)
@@ -350,15 +375,21 @@ class ScopeDiagnosisTests(WorktreeCase):
 
         qwen_dir = self.repo / ".qwen"
         qwen_dir.mkdir()
-        (qwen_dir / "settings.json").write_text('{"original": true}\n', encoding="utf-8")
+        (qwen_dir / "settings.json").write_text(
+            '{"original": true}\n', encoding="utf-8"
+        )
         subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "qwen"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-qm", "qwen"], check=True
+        )
 
         task = self.task(write_mode="validated_patch", max_changed_files=1)
 
         def edit_and_touch_settings(_task, _decision, *, prompt, cwd):
             (cwd / "src" / "value.txt").write_text("new\n", encoding="utf-8")
-            (cwd / ".qwen" / "settings.json").write_text('{"tocado": 1}\n', encoding="utf-8")
+            (cwd / ".qwen" / "settings.json").write_text(
+                '{"tocado": 1}\n', encoding="utf-8"
+            )
             return ProcessOutcome(0, self.envelope(), b""), "ds/deepseek-v4-pro", True
 
         run_once.side_effect = edit_and_touch_settings
@@ -377,10 +408,14 @@ class ScopeDiagnosisTests(WorktreeCase):
     def test_a_clean_run_carries_no_detail(self) -> None:
         """El campo es para fallos: en verde no debe aparecer nada."""
 
-        with WorktreeTransaction(self.task(write_mode="validated_patch")) as transaction:
+        with WorktreeTransaction(
+            self.task(write_mode="validated_patch")
+        ) as transaction:
             assert transaction.worktree is not None
             transaction.snapshot_ignored()
-            (transaction.worktree / "src" / "value.txt").write_text("new\n", encoding="utf-8")
+            (transaction.worktree / "src" / "value.txt").write_text(
+                "new\n", encoding="utf-8"
+            )
             outcome = transaction.collect_patch((".git",))
         self.assertTrue(outcome.patch)
 
@@ -400,7 +435,11 @@ class SalvageTests(WorktreeCase):
 
         def edit_then_truncate(_task, _decision, *, prompt, cwd):
             (cwd / "src" / "value.txt").write_text("new\n", encoding="utf-8")
-            return ProcessOutcome(0, b'[{"type":"assistant","text":"cort', b""), None, False
+            return (
+                ProcessOutcome(0, b'[{"type":"assistant","text":"cort', b""),
+                None,
+                False,
+            )
 
         run_once.side_effect = edit_then_truncate
         result, patch_bytes = execute(
@@ -427,7 +466,7 @@ class SalvageTests(WorktreeCase):
         result, _ = execute(
             task,
             self.decision(task, "native_patch_writer"),
-            gate_commands=("python3 -c \"pass\"",),
+            gate_commands=('python3 -c "pass"',),
             protected_prefixes=(".git", ".env"),
         )
         self.assertEqual("OUTPUT_TRUNCATED", result.status)
@@ -440,13 +479,17 @@ class SalvageTests(WorktreeCase):
 
         def edit_then_truncate(_task, _decision, *, prompt, cwd):
             (cwd / "src" / "value.txt").write_text("new\n", encoding="utf-8")
-            return ProcessOutcome(0, b'[{"type":"assistant","text":"cort', b""), None, False
+            return (
+                ProcessOutcome(0, b'[{"type":"assistant","text":"cort', b""),
+                None,
+                False,
+            )
 
         run_once.side_effect = edit_then_truncate
         result, _ = execute(
             task,
             self.decision(task, "patch_api_writer"),
-            gate_commands=("python3 -c \"pass\"",),
+            gate_commands=('python3 -c "pass"',),
             protected_prefixes=(".git", ".env"),
         )
         self.assertEqual("OUTPUT_TRUNCATED", result.status)

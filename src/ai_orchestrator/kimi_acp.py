@@ -26,7 +26,7 @@ class AcpOutcome:
     reported_model: str
 
 
-_LOCAL_POLICY = b'''default_permission_mode = "manual"
+_LOCAL_POLICY = b"""default_permission_mode = "manual"
 merge_all_available_skills = false
 builtin_product_skills = false
 telemetry = false
@@ -62,7 +62,7 @@ pattern = "Agent"
 [[permission.rules]]
 decision = "deny"
 pattern = "AgentSwarm"
-'''
+"""
 
 
 @contextmanager
@@ -122,8 +122,12 @@ class KimiAcpClient:
         self.stderr_parts: list[bytes] = []
         self.message_parts: list[str] = []
         self.next_id = 1
-        threading.Thread(target=self._reader, args=("stdout", self.process.stdout), daemon=True).start()
-        threading.Thread(target=self._reader, args=("stderr", self.process.stderr), daemon=True).start()
+        threading.Thread(
+            target=self._reader, args=("stdout", self.process.stdout), daemon=True
+        ).start()
+        threading.Thread(
+            target=self._reader, args=("stderr", self.process.stderr), daemon=True
+        ).start()
 
     def _reader(self, name: str, stream: Any) -> None:
         while True:
@@ -135,7 +139,9 @@ class KimiAcpClient:
     def _send(self, payload: dict[str, Any]) -> None:
         if self.process.stdin is None:
             raise AcpError("ACP stdin is closed")
-        self.process.stdin.write(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+        self.process.stdin.write(
+            json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n"
+        )
         self.process.stdin.flush()
 
     def _resolve(self, raw: object, *, write: bool) -> Path:
@@ -175,14 +181,18 @@ class KimiAcpClient:
     def _reverse_request(self, payload: dict[str, Any]) -> None:
         request_id = payload.get("id")
         method = payload.get("method")
-        params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+        params = (
+            payload.get("params") if isinstance(payload.get("params"), dict) else {}
+        )
         try:
             if method == "fs/read_text_file":
                 path = self._resolve(params.get("path"), write=False)
                 lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
                 line = max(1, int(params.get("line", 1)))
                 limit = max(1, min(1000, int(params.get("limit", 1000))))
-                result: object = {"content": "".join(lines[line - 1 : line - 1 + limit])}
+                result: object = {
+                    "content": "".join(lines[line - 1 : line - 1 + limit])
+                }
             elif method == "fs/write_text_file":
                 path = self._resolve(params.get("path"), write=True)
                 content = str(params.get("content", ""))
@@ -192,17 +202,38 @@ class KimiAcpClient:
                 path.write_text(content, encoding="utf-8")
                 result = None
             elif method == "session/request_permission":
-                tool = params.get("toolCall") if isinstance(params.get("toolCall"), dict) else {}
+                tool = (
+                    params.get("toolCall")
+                    if isinstance(params.get("toolCall"), dict)
+                    else {}
+                )
                 kind = str(tool.get("kind", "other"))
                 allow = kind in {"edit", "delete", "move"}
-                options = params.get("options") if isinstance(params.get("options"), list) else []
-                wanted = {"allow_once", "allow_always"} if allow else {"reject_once", "reject_always"}
+                options = (
+                    params.get("options")
+                    if isinstance(params.get("options"), list)
+                    else []
+                )
+                wanted = (
+                    {"allow_once", "allow_always"}
+                    if allow
+                    else {"reject_once", "reject_always"}
+                )
                 selected = next(
-                    (value for value in options if isinstance(value, dict) and value.get("kind") in wanted),
+                    (
+                        value
+                        for value in options
+                        if isinstance(value, dict) and value.get("kind") in wanted
+                    ),
                     None,
                 )
                 result = (
-                    {"outcome": {"outcome": "selected", "optionId": selected["optionId"]}}
+                    {
+                        "outcome": {
+                            "outcome": "selected",
+                            "optionId": selected["optionId"],
+                        }
+                    }
                     if selected
                     else {"outcome": {"outcome": "cancelled"}}
                 )
@@ -221,7 +252,9 @@ class KimiAcpClient:
     def request(self, method: str, params: dict[str, Any]) -> Any:
         request_id = self.next_id
         self.next_id += 1
-        self._send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        self._send(
+            {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+        )
         deadline = time.monotonic() + self.timeout_seconds
         while True:
             remaining = deadline - time.monotonic()
@@ -318,9 +351,14 @@ def run_kimi_acp(
                     },
                 },
             )
-            if not isinstance(initialized, dict) or initialized.get("protocolVersion") != 1:
+            if (
+                not isinstance(initialized, dict)
+                or initialized.get("protocolVersion") != 1
+            ):
                 raise AcpError("Kimi ACP protocol negotiation failed")
-            session = client.request("session/new", {"cwd": str(worktree), "mcpServers": []})
+            session = client.request(
+                "session/new", {"cwd": str(worktree), "mcpServers": []}
+            )
             if not isinstance(session, dict) or not session.get("sessionId"):
                 raise AcpError("Kimi ACP did not return a session id")
             session_id = str(session["sessionId"])

@@ -12,7 +12,6 @@ from typing import Any
 
 from ai_orchestrator.models import ContractError
 
-
 DSPY_VERSION = "3.3.0"
 ALLOWED_OPTIMIZERS = {"BootstrapFewShot", "MIPROv2"}
 ALLOWED_ROLES = {"tests", "docs", "review"}
@@ -33,7 +32,9 @@ class PromptExperiment:
     test_fraction: float
 
 
-def load_prompt_experiment(path: Path) -> tuple[PromptExperiment, Path, list[dict[str, Any]]]:
+def load_prompt_experiment(
+    path: Path,
+) -> tuple[PromptExperiment, Path, list[dict[str, Any]]]:
     if path.is_symlink() or not path.is_file():
         raise ContractError("prompt experiment must be a regular TOML file")
     with path.open("rb") as handle:
@@ -55,17 +56,35 @@ def load_prompt_experiment(path: Path) -> tuple[PromptExperiment, Path, list[dic
     )
     if experiment.engine != "dspy" or experiment.engine_version != DSPY_VERSION:
         raise ContractError("experiment must pin the approved DSPy version")
-    if experiment.role not in ALLOWED_ROLES or experiment.optimizer not in ALLOWED_OPTIMIZERS:
+    if (
+        experiment.role not in ALLOWED_ROLES
+        or experiment.optimizer not in ALLOWED_OPTIMIZERS
+    ):
         raise ContractError("experiment role or optimizer is not approved")
     if not 1 <= experiment.max_calls <= 40:
         raise ContractError("experiment max_calls must be between 1 and 40")
-    if not 0 <= experiment.max_labeled_demos <= 4 or not 0 <= experiment.max_bootstrapped_demos <= 4:
+    if (
+        not 0 <= experiment.max_labeled_demos <= 4
+        or not 0 <= experiment.max_bootstrapped_demos <= 4
+    ):
         raise ContractError("experiment demo limits must not exceed four")
-    fractions = experiment.train_fraction + experiment.validation_fraction + experiment.test_fraction
-    if abs(fractions - 1.0) > 1e-9 or min(
-        experiment.train_fraction, experiment.validation_fraction, experiment.test_fraction
-    ) <= 0:
-        raise ContractError("experiment split fractions must be positive and sum to one")
+    fractions = (
+        experiment.train_fraction
+        + experiment.validation_fraction
+        + experiment.test_fraction
+    )
+    if (
+        abs(fractions - 1.0) > 1e-9
+        or min(
+            experiment.train_fraction,
+            experiment.validation_fraction,
+            experiment.test_fraction,
+        )
+        <= 0
+    ):
+        raise ContractError(
+            "experiment split fractions must be positive and sum to one"
+        )
 
     relative = Path(experiment.dataset)
     if relative.is_absolute() or ".." in relative.parts:
@@ -75,7 +94,9 @@ def load_prompt_experiment(path: Path) -> tuple[PromptExperiment, Path, list[dic
         raise ContractError("experiment dataset is missing or unsafe")
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for line_number, line in enumerate(dataset.read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, line in enumerate(
+        dataset.read_text(encoding="utf-8").splitlines(), 1
+    ):
         if not line.strip():
             continue
         row = json.loads(line)
@@ -83,9 +104,15 @@ def load_prompt_experiment(path: Path) -> tuple[PromptExperiment, Path, list[dic
             raise ContractError(f"dataset line {line_number} must be an object")
         case_id = str(row.get("case_id", ""))
         if not case_id or case_id in seen:
-            raise ContractError(f"dataset case_id missing or duplicate at line {line_number}")
-        if not isinstance(row.get("input"), str) or not isinstance(row.get("expected"), str):
-            raise ContractError(f"dataset line {line_number} requires input and expected strings")
+            raise ContractError(
+                f"dataset case_id missing or duplicate at line {line_number}"
+            )
+        if not isinstance(row.get("input"), str) or not isinstance(
+            row.get("expected"), str
+        ):
+            raise ContractError(
+                f"dataset line {line_number} requires input and expected strings"
+            )
         seen.add(case_id)
         rows.append(row)
     if len(rows) < 40:
@@ -93,7 +120,9 @@ def load_prompt_experiment(path: Path) -> tuple[PromptExperiment, Path, list[dic
     return experiment, dataset, rows
 
 
-def prompt_optimization_preflight(experiment_path: Path, baseline_path: Path) -> dict[str, Any]:
+def prompt_optimization_preflight(
+    experiment_path: Path, baseline_path: Path
+) -> dict[str, Any]:
     experiment, dataset, rows = load_prompt_experiment(experiment_path)
     if baseline_path.is_symlink() or not baseline_path.is_file():
         raise ContractError("baseline receipt must be a regular JSON file")

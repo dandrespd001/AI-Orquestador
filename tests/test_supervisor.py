@@ -28,7 +28,29 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(b"bounded prompt", outcome.stdout)
         self.assertFalse(outcome.timed_out)
 
-    @unittest.skipUnless(Path("/proc").is_dir(), "Linux process assertions require /proc")
+    def test_output_limit_terminates_the_process_group(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            outcome = run_supervised(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdout.buffer.write(b'x' * 8192)",
+                ],
+                input_data=None,
+                cwd=directory,
+                env={"PATH": os.environ.get("PATH", "")},
+                timeout_seconds=2,
+                max_stdout_bytes=1024,
+                max_stderr_bytes=512,
+            )
+
+        self.assertTrue(outcome.output_limited)
+        self.assertEqual(125, outcome.returncode)
+        self.assertLessEqual(len(outcome.stdout), 1024)
+
+    @unittest.skipUnless(
+        Path("/proc").is_dir(), "Linux process assertions require /proc"
+    )
     def test_timeout_kills_the_process_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             outcome = run_supervised(
@@ -55,7 +77,9 @@ class SupervisorTests(unittest.TestCase):
             if not Path(f"/proc/{child_pid}").exists():
                 break
             time.sleep(0.05)
-        self.assertFalse(Path(f"/proc/{child_pid}").exists(), "child process survived timeout")
+        self.assertFalse(
+            Path(f"/proc/{child_pid}").exists(), "child process survived timeout"
+        )
 
 
 if __name__ == "__main__":

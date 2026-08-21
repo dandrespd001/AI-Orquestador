@@ -13,10 +13,14 @@ class MockUpstreamTests(unittest.TestCase):
         self.assertEqual("gateway-ok", chat["choices"][0]["message"]["content"])
 
         status, tool = response_for(
-            "/v1/chat/completions", {"model": "mock-model", "tools": [{"type": "function"}]}
+            "/v1/chat/completions",
+            {"model": "mock-model", "tools": [{"type": "function"}]},
         )
         self.assertEqual(200, status)
-        self.assertEqual("sum_values", tool["choices"][0]["message"]["tool_calls"][0]["function"]["name"])
+        self.assertEqual(
+            "sum_values",
+            tool["choices"][0]["message"]["tool_calls"][0]["function"]["name"],
+        )
 
     def test_synthetic_error_is_body_free_and_stable(self) -> None:
         status, payload = response_for(

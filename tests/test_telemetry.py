@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -77,6 +76,12 @@ class TelemetryTests(unittest.TestCase):
         store.record_route(task, decision)
         store.record_run(result)
 
+        report = store.report()
+        observations = store.routing_observations()
+        self.assertEqual(1, report["usage_record_count"])
+        self.assertEqual(1000.0, observations["deepseek-v4-flash"]["latency_ms"])
+        self.assertEqual(1, observations["deepseek-v4-flash"]["sample_count"])
+
         raw = store.path.read_bytes()
         self.assertNotIn(b"secret prompt body", raw)
         self.assertNotIn(b"model response body", raw)
@@ -84,10 +89,14 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(0o700, store.path.parent.stat().st_mode & 0o777)
 
         with store._connect() as connection:
-            self.assertEqual("wal", connection.execute("PRAGMA journal_mode").fetchone()[0])
+            self.assertEqual(
+                "wal", connection.execute("PRAGMA journal_mode").fetchone()[0]
+            )
             self.assertEqual(2, connection.execute("PRAGMA synchronous").fetchone()[0])
             self.assertEqual(1, connection.execute("PRAGMA foreign_keys").fetchone()[0])
-            self.assertEqual(1, connection.execute("PRAGMA secure_delete").fetchone()[0])
+            self.assertEqual(
+                1, connection.execute("PRAGMA secure_delete").fetchone()[0]
+            )
             columns = {
                 row[1]
                 for table in ("route_decisions", "runs")
@@ -108,15 +117,29 @@ class TelemetryTests(unittest.TestCase):
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    "old-route", "old-task", "2020-01-01T00:00:00+00:00", "a" * 64,
-                    "default", "tests", "internal", "b" * 64, "deepseek-v4-flash",
-                    "deepseek", "omniroute", None, "READY", 1, "eligible",
+                    "old-route",
+                    "old-task",
+                    "2020-01-01T00:00:00+00:00",
+                    "a" * 64,
+                    "default",
+                    "tests",
+                    "internal",
+                    "b" * 64,
+                    "deepseek-v4-flash",
+                    "deepseek",
+                    "omniroute",
+                    None,
+                    "READY",
+                    1,
+                    "eligible",
                 ),
             )
         preview = store.preview_metadata_purge(90)
         self.assertEqual(1, preview["routes"])
         self.assertTrue(preview["dry_run"])
         self.assertEqual(1, store.report()["route_count"])
+        with self.assertRaises(ValueError):
+            store.preview_metadata_purge(91)
 
 
 if __name__ == "__main__":

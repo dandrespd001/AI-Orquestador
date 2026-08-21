@@ -28,7 +28,9 @@ class _Response:
 class PatchApiTests(unittest.TestCase):
     @patch("ai_orchestrator.patch_api.omniroute_runtime_key", return_value="key")
     @patch("ai_orchestrator.patch_api.urllib.request.urlopen")
-    def test_omniroute_patch_receives_only_bounded_context(self, urlopen, runtime_key) -> None:
+    def test_omniroute_patch_receives_only_bounded_context(
+        self, urlopen, runtime_key
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
@@ -92,6 +94,68 @@ class PatchApiTests(unittest.TestCase):
             self.assertNotIn("secret", body)
             self.assertEqual("ds/deepseek-v4-flash", outcome.reported_model)
 
+    @patch("ai_orchestrator.patch_api.minimax_runtime_key", return_value="key")
+    @patch("ai_orchestrator.patch_api.urllib.request.urlopen")
+    def test_minimax_uses_responses_api_without_retention(
+        self, urlopen, _runtime_key
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            (repo / "src").mkdir()
+            (repo / "src" / "value.txt").write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+            task = TaskSpec.from_mapping(
+                {
+                    "repo": str(repo),
+                    "task_type": "docs",
+                    "sensitivity": "internal",
+                    "write_mode": "validated_patch",
+                    "allowed_write_paths": ["src"],
+                }
+            )
+            decision = RouteDecision(
+                schema_version=1,
+                decision_id="minimax-decision",
+                task_id=task.task_id,
+                profile="default",
+                status="READY",
+                selected_model="MiniMax-M3",
+                requested_route_model="MiniMax-M3",
+                provider="minimax",
+                family="minimax",
+                transport="qwen_minimax_cli",
+                reviewer_model=None,
+                alternatives=(),
+                unavailable={},
+                auto_execute=True,
+                approval_required=False,
+                reason="eligible",
+                context_sha256=task.context_sha256(),
+                write_mode=task.write_mode,
+                trust_tier="official_subscription",
+                execution_profile="patch_api_writer",
+            )
+            urlopen.return_value = _Response(
+                {
+                    "model": "MiniMax-M3",
+                    "status": "completed",
+                    "output_text": "diff --git a/src/value.txt b/src/value.txt",
+                }
+            )
+
+            outcome = generate_patch(task, decision, worktree=repo, prompt=b"bounded")
+
+            request = urlopen.call_args.args[0]
+            payload = json.loads(request.data)
+            self.assertEqual("https://api.minimax.io/v1/responses", request.full_url)
+            self.assertEqual("Bearer key", request.get_header("Authorization"))
+            self.assertEqual("MiniMax-M3", payload["model"])
+            self.assertIn("bounded", payload["input"])
+            self.assertFalse(payload["store"])
+            self.assertNotIn("messages", payload)
+            self.assertEqual("MiniMax-M3", outcome.reported_model)
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -148,7 +212,9 @@ class PatchApiErrorCodeTests(unittest.TestCase):
             task, decision = self._task_and_decision(directory)
             urlopen.return_value = _Response(payload)
             with self.assertRaises(PatchApiError) as raised:
-                generate_patch(task, decision, worktree=Path(directory), prompt=b"do it")
+                generate_patch(
+                    task, decision, worktree=Path(directory), prompt=b"do it"
+                )
             return raised.exception
 
     @patch("ai_orchestrator.patch_api.omniroute_runtime_key", return_value="key")
@@ -165,7 +231,10 @@ class PatchApiErrorCodeTests(unittest.TestCase):
                 "choices": [
                     {
                         "finish_reason": "length",
-                        "message": {"content": "", "reasoning_content": "thinking" * 900},
+                        "message": {
+                            "content": "",
+                            "reasoning_content": "thinking" * 900,
+                        },
                     }
                 ],
             },
@@ -189,7 +258,9 @@ class PatchApiErrorCodeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             task, decision = self._task_and_decision(directory)
             with self.assertRaises(PatchApiError) as raised:
-                generate_patch(task, decision, worktree=Path(directory), prompt=b"do it")
+                generate_patch(
+                    task, decision, worktree=Path(directory), prompt=b"do it"
+                )
         self.assertEqual(raised.exception.code, "CREDENTIAL_UNAVAILABLE")
 
     def test_worker_writes_only_the_code_across_the_boundary(self) -> None:

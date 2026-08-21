@@ -16,7 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -83,13 +83,23 @@ def _reported_model(value: Any) -> str | None:
 
 def _require_loopback(url: str) -> str:
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password:
+    if (
+        parsed.scheme != "http"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
         raise ContractError("gateway base_url must be an unauthenticated http URL")
     try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port or 80)}
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(parsed.hostname, parsed.port or 80)
+        }
     except socket.gaierror as exc:
         raise ContractError("gateway base_url host cannot be resolved") from exc
-    if not addresses or not all(address.startswith("127.") or address == "::1" for address in addresses):
+    if not addresses or not all(
+        address.startswith("127.") or address == "::1" for address in addresses
+    ):
         raise ContractError("gateway benchmark only permits loopback targets")
     return url.rstrip("/")
 
@@ -113,7 +123,9 @@ def _read_payload(manifest: Path, value: object) -> bytes:
     return payload
 
 
-def load_benchmark_manifest(path: Path) -> tuple[list[GatewayTarget], list[BenchmarkScenario], int, int, float]:
+def load_benchmark_manifest(
+    path: Path,
+) -> tuple[list[GatewayTarget], list[BenchmarkScenario], int, int, float]:
     if path.is_symlink() or not path.is_file():
         raise ContractError("benchmark manifest must be a regular TOML file")
     with path.open("rb") as handle:
@@ -123,7 +135,11 @@ def load_benchmark_manifest(path: Path) -> tuple[list[GatewayTarget], list[Bench
     repetitions = int(raw.get("repetitions", 30))
     warmups = int(raw.get("warmups", 5))
     timeout = float(raw.get("timeout_seconds", 10.0))
-    if not 1 <= repetitions <= 100 or not 0 <= warmups <= 20 or not 0.1 <= timeout <= 60:
+    if (
+        not 1 <= repetitions <= 100
+        or not 0 <= warmups <= 20
+        or not 0.1 <= timeout <= 60
+    ):
         raise ContractError("benchmark limits are outside the permitted range")
 
     targets: list[GatewayTarget] = []
@@ -136,7 +152,9 @@ def load_benchmark_manifest(path: Path) -> tuple[list[GatewayTarget], list[Bench
         if not name or name in seen_targets or not version:
             raise ContractError("target names must be unique and versioned")
         seen_targets.add(name)
-        providers = tuple(sorted({str(value) for value in row.get("official_providers", ())}))
+        providers = tuple(
+            sorted({str(value) for value in row.get("official_providers", ())})
+        )
         immutable_ref = str(row.get("immutable_ref", "")).strip()
         if not immutable_ref:
             raise ContractError("target immutable_ref is required")
@@ -146,7 +164,9 @@ def load_benchmark_manifest(path: Path) -> tuple[list[GatewayTarget], list[Bench
                 version=version,
                 base_url=_require_loopback(str(row["base_url"])),
                 official_providers=providers,
-                provider_coverage_attested=bool(row.get("provider_coverage_attested", False)),
+                provider_coverage_attested=bool(
+                    row.get("provider_coverage_attested", False)
+                ),
                 custom_provider_code=bool(row.get("custom_provider_code", False)),
                 content_logging=bool(row.get("content_logging", True)),
                 immutable_ref=immutable_ref,
@@ -161,7 +181,12 @@ def load_benchmark_manifest(path: Path) -> tuple[list[GatewayTarget], list[Bench
         name = str(row.get("name", "")).strip()
         route = str(row.get("path", "")).strip()
         concurrency = int(row.get("concurrency", 1))
-        if not name or name in seen_scenarios or not route.startswith("/") or route.startswith("//"):
+        if (
+            not name
+            or name in seen_scenarios
+            or not route.startswith("/")
+            or route.startswith("//")
+        ):
             raise ContractError("scenario names and paths must be unique and safe")
         if concurrency not in {1, 4, 16}:
             raise ContractError("scenario concurrency must be 1, 4, or 16")
@@ -172,7 +197,9 @@ def load_benchmark_manifest(path: Path) -> tuple[list[GatewayTarget], list[Bench
                 path=route,
                 payload=_read_payload(path, row["payload_file"]),
                 expected_status=int(row.get("expected_status", 200)),
-                expected_model=str(row["expected_model"]) if row.get("expected_model") else None,
+                expected_model=str(row["expected_model"])
+                if row.get("expected_model")
+                else None,
                 concurrency=concurrency,
             )
         )
@@ -181,12 +208,17 @@ def load_benchmark_manifest(path: Path) -> tuple[list[GatewayTarget], list[Bench
     return targets, scenarios, repetitions, warmups, timeout
 
 
-def _request(target: GatewayTarget, scenario: BenchmarkScenario, timeout: float) -> Observation:
+def _request(
+    target: GatewayTarget, scenario: BenchmarkScenario, timeout: float
+) -> Observation:
     request = urllib.request.Request(
         target.base_url + scenario.path,
         data=scenario.payload,
         method="POST",
-        headers={"Content-Type": "application/json", "X-AI-Orchestrator-Benchmark": "1"},
+        headers={
+            "Content-Type": "application/json",
+            "X-AI-Orchestrator-Benchmark": "1",
+        },
     )
     start = time.perf_counter_ns()
     try:
@@ -201,7 +233,7 @@ def _request(target: GatewayTarget, scenario: BenchmarkScenario, timeout: float)
         body = exc.read()
         total = (time.perf_counter_ns() - start) / 1_000_000
         status = int(exc.code)
-    except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError) as exc:
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
         elapsed = (time.perf_counter_ns() - start) / 1_000_000
         return Observation(None, elapsed, elapsed, 0, None, None, type(exc).__name__)
 
@@ -221,11 +253,16 @@ def _request(target: GatewayTarget, scenario: BenchmarkScenario, timeout: float)
     )
 
 
-def _summarize(target: GatewayTarget, scenario: BenchmarkScenario, rows: list[Observation]) -> dict[str, Any]:
+def _summarize(
+    target: GatewayTarget, scenario: BenchmarkScenario, rows: list[Observation]
+) -> dict[str, Any]:
     correct = sum(
         row.status == scenario.expected_status
         and row.error_code is None
-        and (scenario.expected_model is None or row.reported_model == scenario.expected_model)
+        and (
+            scenario.expected_model is None
+            or row.reported_model == scenario.expected_model
+        )
         for row in rows
     )
     first_bytes = [row.first_byte_ms for row in rows]
@@ -239,24 +276,41 @@ def _summarize(target: GatewayTarget, scenario: BenchmarkScenario, rows: list[Ob
         "observations": len(rows),
         "correct": correct,
         "correctness_rate": correct / len(rows),
-        "first_byte_ms": {"p50": round(statistics.median(first_bytes), 3), "p95": _safe_percentile(first_bytes, 0.95)},
-        "total_ms": {"p50": round(statistics.median(totals), 3), "p95": _safe_percentile(totals, 0.95)},
+        "first_byte_ms": {
+            "p50": round(statistics.median(first_bytes), 3),
+            "p95": _safe_percentile(first_bytes, 0.95),
+        },
+        "total_ms": {
+            "p50": round(statistics.median(totals), 3),
+            "p95": _safe_percentile(totals, 0.95),
+        },
         "response_bytes": sorted({row.response_bytes for row in rows}),
-        "response_sha256": sorted({row.response_sha256 for row in rows if row.response_sha256}),
+        "response_sha256": sorted(
+            {row.response_sha256 for row in rows if row.response_sha256}
+        ),
         "errors": sorted({row.error_code for row in rows if row.error_code}),
         "status": "PASSED" if correct == len(rows) else "FAILED",
     }
 
 
 def run_gateway_benchmark(manifest: Path) -> dict[str, Any]:
-    targets, scenarios, repetitions, warmups, timeout = load_benchmark_manifest(manifest)
+    targets, scenarios, repetitions, warmups, timeout = load_benchmark_manifest(
+        manifest
+    )
     results: list[dict[str, Any]] = []
     for target in targets:
         for scenario in scenarios:
             for _ in range(warmups):
                 _request(target, scenario, timeout)
             with ThreadPoolExecutor(max_workers=scenario.concurrency) as pool:
-                rows = list(pool.map(lambda _: _request(target, scenario, timeout), range(repetitions)))
+                rows = list(
+                    pool.map(
+                        lambda _, current_target=target, current_scenario=scenario: (
+                            _request(current_target, current_scenario, timeout)
+                        ),
+                        range(repetitions),
+                    )
+                )
             results.append(_summarize(target, scenario, rows))
     target_gates: list[dict[str, Any]] = []
     required_providers = {"deepseek", "moonshot", "minimax"}
@@ -306,14 +360,18 @@ def select_gateway(report: dict[str, Any], incumbent: str) -> dict[str, Any]:
     if incumbent not in gates:
         raise ContractError("incumbent is absent from benchmark receipt")
     rows = report.get("results", [])
-    incumbent_rows = {str(row["scenario"]): row for row in rows if row.get("target") == incumbent}
+    incumbent_rows = {
+        str(row["scenario"]): row for row in rows if row.get("target") == incumbent
+    }
     if not incumbent_rows:
         raise ContractError("incumbent has no benchmark observations")
     candidates: list[dict[str, Any]] = []
     for name, gate in gates.items():
         if name == incumbent or not gate.get("promotion_eligible"):
             continue
-        candidate_rows = {str(row["scenario"]): row for row in rows if row.get("target") == name}
+        candidate_rows = {
+            str(row["scenario"]): row for row in rows if row.get("target") == name
+        }
         if set(candidate_rows) != set(incumbent_rows):
             continue
         ratios = [
@@ -329,7 +387,9 @@ def select_gateway(report: dict[str, Any], incumbent: str) -> dict[str, Any]:
             }
         )
     qualified = [
-        row for row in candidates if row["median_p95_ratio"] <= 0.8 and row["worst_p95_ratio"] <= 1.05
+        row
+        for row in candidates
+        if row["median_p95_ratio"] <= 0.8 and row["worst_p95_ratio"] <= 1.05
     ]
     winner = min(qualified, key=lambda row: row["median_p95_ratio"], default=None)
     return {
@@ -339,7 +399,9 @@ def select_gateway(report: dict[str, Any], incumbent: str) -> dict[str, Any]:
         "selected": winner["target"] if winner else incumbent,
         "replacement": winner is not None,
         "candidates": candidates,
-        "reason": "MATERIAL_P95_IMPROVEMENT" if winner else "NO_MATERIAL_ELIGIBLE_IMPROVEMENT",
+        "reason": "MATERIAL_P95_IMPROVEMENT"
+        if winner
+        else "NO_MATERIAL_ELIGIBLE_IMPROVEMENT",
     }
 
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -11,12 +12,15 @@ import subprocess
 import time
 from pathlib import Path
 
-
 HOME = Path.home()
 SOURCE = Path(__file__).resolve().parents[1]
 STATE_ROOT = HOME / ".local" / "share" / "ai-orchestrator"
 CONFIG_ROOT = HOME / ".config" / "ai-orchestrator"
-BACKUP_ROOT = STATE_ROOT / "backups" / time.strftime("pre-hardening-%Y%m%dT%H%M%SZ", time.gmtime())
+BACKUP_ROOT = (
+    STATE_ROOT
+    / "backups"
+    / time.strftime("pre-hardening-%Y%m%dT%H%M%SZ", time.gmtime())
+)
 OFFICIAL_OMNIROUTE_PROVIDERS = {"deepseek", "kimi-coding", "moonshot", "minimax"}
 
 
@@ -44,7 +48,9 @@ def parse_env(path: Path) -> dict[str, str]:
         values[name.strip()] = value.strip().strip('"').strip("'")
     required = {"OMNIROUTE_API_KEY", "STORAGE_ENCRYPTION_KEY"}
     if not required <= values.keys() or any(not values[name] for name in required):
-        raise RuntimeError("OmniRoute environment does not contain both required credentials")
+        raise RuntimeError(
+            "OmniRoute environment does not contain both required credentials"
+        )
     return {name: values[name] for name in required}
 
 
@@ -60,8 +66,13 @@ def encrypt_credentials(values: dict[str, str]) -> list[str]:
         destination = credentials / f"{credential_name}.cred"
         subprocess.run(
             [
-                "systemd-creds", "encrypt", "--user", "--with-key=host",
-                f"--name={credential_name}", "-", str(destination),
+                "systemd-creds",
+                "encrypt",
+                "--user",
+                "--with-key=host",
+                f"--name={credential_name}",
+                "-",
+                str(destination),
             ],
             input=values[source_name].encode("utf-8"),
             check=True,
@@ -73,7 +84,9 @@ def encrypt_credentials(values: dict[str, str]) -> list[str]:
     return installed
 
 
-def harden_omniroute_database(path: Path, *, apply_provider_policy: bool) -> dict[str, object]:
+def harden_omniroute_database(
+    path: Path, *, apply_provider_policy: bool
+) -> dict[str, object]:
     backup(path)
     backup(path.with_name(path.name + "-wal"))
     backup(path.with_name(path.name + "-shm"))
@@ -121,7 +134,10 @@ def install_files() -> None:
     private_dir(bin_dir)
     links = {
         "ai-orchestrator": SOURCE / ".venv" / "bin" / "ai-orchestrator",
-        "ai-orchestrator-omniroute-wrapper": SOURCE / ".venv" / "bin" / "ai-orchestrator-omniroute-wrapper",
+        "ai-orchestrator-omniroute-wrapper": SOURCE
+        / ".venv"
+        / "bin"
+        / "ai-orchestrator-omniroute-wrapper",
         "omniroute-safe": SOURCE / ".venv" / "bin" / "omniroute-safe",
     }
     for name, source in links.items():
@@ -151,9 +167,14 @@ def install_files() -> None:
 
 def harden_modes(roots: tuple[Path, ...] | None = None) -> dict[str, int]:
     selected_roots = roots or (
-        HOME / ".omniroute", HOME / ".local" / "share" / "opencode",
-        HOME / ".codex", HOME / ".claude", HOME / ".kimi-code",
-        HOME / ".minimax_mcp", STATE_ROOT, CONFIG_ROOT,
+        HOME / ".omniroute",
+        HOME / ".local" / "share" / "opencode",
+        HOME / ".codex",
+        HOME / ".claude",
+        HOME / ".kimi-code",
+        HOME / ".minimax_mcp",
+        STATE_ROOT,
+        CONFIG_ROOT,
     )
     changed = 0
     skipped_read_only = 0
@@ -161,14 +182,20 @@ def harden_modes(roots: tuple[Path, ...] | None = None) -> dict[str, int]:
         if not root.exists() or root.is_symlink():
             continue
         for current, directories, files in os.walk(root, followlinks=False):
-            paths = [Path(current)] + [Path(current) / name for name in directories + files]
+            paths = [Path(current)] + [
+                Path(current) / name for name in directories + files
+            ]
             for path in paths:
                 if path.is_symlink():
                     continue
                 metadata = path.lstat()
                 if metadata.st_uid != os.getuid() or metadata.st_nlink > 1:
                     continue
-                desired = 0o700 if stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o111 else 0o600
+                desired = (
+                    0o700
+                    if stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o111
+                    else 0o600
+                )
                 if stat.S_IMODE(metadata.st_mode) != desired:
                     try:
                         path.chmod(desired)
@@ -195,7 +222,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     if args.install_only and (args.apply or args.apply_provider_policy):
-        raise RuntimeError("--install-only cannot be combined with credential migration flags")
+        raise RuntimeError(
+            "--install-only cannot be combined with credential migration flags"
+        )
     if args.apply_provider_policy and not args.apply:
         raise RuntimeError("--apply-provider-policy requires --apply")
     if args.install_only:
@@ -235,7 +264,9 @@ def main(argv: list[str] | None = None) -> int:
     private_dir(BACKUP_ROOT)
     init_comm = Path("/proc/1/comm").read_text(encoding="utf-8").strip().lower()
     if init_comm not in {"systemd", "init"}:
-        raise RuntimeError("process visibility is restricted; run hardening from the host user session")
+        raise RuntimeError(
+            "process visibility is restricted; run hardening from the host user session"
+        )
     backup(environment_path)
     install_files()
     credentials = encrypt_credentials(values)
@@ -254,7 +285,9 @@ def main(argv: list[str] | None = None) -> int:
         "plaintext_environment_retained_until_service_verification": True,
     }
     receipt_path = STATE_ROOT / "hardening-receipt.json"
-    receipt_path.write_text(json.dumps(receipt, sort_keys=True, indent=2), encoding="utf-8")
+    receipt_path.write_text(
+        json.dumps(receipt, sort_keys=True, indent=2), encoding="utf-8"
+    )
     receipt_path.chmod(0o600)
     print(json.dumps(receipt, sort_keys=True))
     return 0

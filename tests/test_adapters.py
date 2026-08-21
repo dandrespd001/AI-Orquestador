@@ -129,7 +129,11 @@ class AdapterTests(unittest.TestCase):
     def test_environment_does_not_forward_unrelated_tokens(self) -> None:
         with patch.dict(
             os.environ,
-            {"BROKER_SECRET_KEY": "forbidden", "ANTHROPIC_AUTH_TOKEN": "forbidden", "HOME": str(self.root)},
+            {
+                "BROKER_SECRET_KEY": "forbidden",
+                "ANTHROPIC_AUTH_TOKEN": "forbidden",
+                "HOME": str(self.root),
+            },
             clear=True,
         ):
             environment = _minimal_environment("codex_cli")
@@ -153,8 +157,22 @@ class AdapterTests(unittest.TestCase):
         self.assertNotIn("OMNIROUTE_API_KEY", environment)
         self.assertNotIn("MINIMAX_API_KEY", environment)
 
+    def test_minimax_environment_uses_openai_v1_surface(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"HOME": str(self.root), "MINIMAX_API_KEY": "minimax-secret"},
+            clear=True,
+        ):
+            environment = _minimal_environment("qwen_minimax_cli")
+        self.assertEqual("minimax-secret", environment["OPENAI_API_KEY"])
+        self.assertEqual("https://api.minimax.io/v1", environment["OPENAI_BASE_URL"])
+        self.assertNotIn("MINIMAX_API_KEY", environment)
+        self.assertNotIn("ANTHROPIC_API_KEY", environment)
+
     def test_qwen_zero_exit_error_envelope_is_not_success(self) -> None:
-        stdout = b'[{"type":"result","subtype":"error","is_error":true,"result":"upstream"}]'
+        stdout = (
+            b'[{"type":"result","subtype":"error","is_error":true,"result":"upstream"}]'
+        )
         self.assertEqual("PROVIDER_ERROR", _qwen_error(stdout, b""))
 
     def test_qwen_false_success_api_error_is_not_success(self) -> None:
@@ -198,6 +216,25 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(AdapterError) as context:
             execute(self.task, decision)
         self.assertEqual("HANDOFF_REQUIRED", context.exception.code)
+
+    @patch("ai_orchestrator.adapters.run_supervised")
+    def test_prompt_budget_is_enforced_before_process_start(self, run) -> None:
+        (self.repo / "prompt.txt").write_bytes(b"x" * 2049)
+        task = TaskSpec.from_mapping(
+            {
+                "repo": str(self.repo),
+                "task_type": "tests",
+                "sensitivity": "internal",
+                "prompt_file": "prompt.txt",
+                "max_context_tokens": 512,
+            }
+        )
+
+        with self.assertRaises(AdapterError) as context:
+            execute(task, self.decision())
+
+        self.assertEqual("CONTEXT_BUDGET_EXCEEDED", context.exception.code)
+        run.assert_not_called()
 
 
 if __name__ == "__main__":

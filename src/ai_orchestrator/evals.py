@@ -15,7 +15,9 @@ def run_routing_eval(suite: Path, profile_name: str) -> dict[str, Any]:
     profile = load_profile(profile_name)
     seen: set[str] = set()
     cases: list[dict[str, Any]] = []
-    for line_number, line in enumerate(suite.read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, line in enumerate(
+        suite.read_text(encoding="utf-8").splitlines(), 1
+    ):
         if not line.strip():
             continue
         row = json.loads(line)

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from ai_orchestrator.models import RouteDecision, RunResult, TaskSpec, ensure_private_directory
+from ai_orchestrator.models import (
+    RouteDecision,
+    RunResult,
+    TaskSpec,
+    UsageRecord,
+    ensure_private_directory,
+)
 
 
 def default_state_root() -> Path:
@@ -21,7 +27,7 @@ class TelemetryStore:
     """Metadata-only SQLite store. Prompt and response bodies are never accepted."""
 
     def __init__(self, path: Path | None = None) -> None:
-        root = default_state_root()
+        root = path.parent if path is not None else default_state_root()
         ensure_private_directory(root)
         self.path = path or root / "telemetry.sqlite"
         if self.path.is_symlink():
@@ -41,7 +47,7 @@ class TelemetryStore:
         return connection
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS route_decisions (
@@ -89,6 +95,28 @@ class TelemetryStore:
                     ON runs(finished_at);
                 CREATE INDEX IF NOT EXISTS idx_run_model_status
                     ON runs(requested_model, status);
+
+                CREATE TABLE IF NOT EXISTS usage_records (
+                    record_id TEXT PRIMARY KEY,
+                    route_plan_id TEXT,
+                    created_at TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    input_tokens INTEGER NOT NULL,
+                    output_tokens INTEGER NOT NULL,
+                    cached_tokens INTEGER NOT NULL,
+                    credits_used REAL NOT NULL,
+                    estimated_cost_usd REAL NOT NULL,
+                    cache_hit INTEGER NOT NULL CHECK (cache_hit IN (0, 1)),
+                    latency_ms INTEGER NOT NULL,
+                    outcome TEXT NOT NULL,
+                    provenance_verified INTEGER NOT NULL
+                        CHECK (provenance_verified IN (0, 1))
+                );
+                CREATE INDEX IF NOT EXISTS idx_usage_created
+                    ON usage_records(created_at);
+                CREATE INDEX IF NOT EXISTS idx_usage_provider_model
+                    ON usage_records(provider, model);
                 """
             )
         os.chmod(self.path, 0o600)
@@ -102,7 +130,7 @@ class TelemetryStore:
 
         repo_hash = hashlib.sha256(task.repo.encode("utf-8")).hexdigest()
         created_at = datetime.now(UTC).isoformat()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 """
                 INSERT INTO route_decisions (
@@ -132,7 +160,15 @@ class TelemetryStore:
             )
 
     def record_run(self, result: RunResult) -> None:
-        with self._connect() as connection:
+        usage = UsageRecord(
+            provider=result.provider,
+            model=result.requested_model,
+            outcome=result.status,
+            latency_ms=result.latency_ms,
+            provenance_verified=result.provenance_verified,
+            route_plan_id=result.decision_id,
+        )
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 """
                 INSERT INTO runs (
@@ -161,11 +197,110 @@ class TelemetryStore:
                     result.error_code,
                 ),
             )
+            connection.execute(
+                """
+                INSERT INTO usage_records (
+                    record_id, route_plan_id, created_at, provider, model,
+                    input_tokens, output_tokens, cached_tokens, credits_used,
+                    estimated_cost_usd, cache_hit, latency_ms, outcome,
+                    provenance_verified
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    usage.record_id,
+                    usage.route_plan_id,
+                    usage.created_at,
+                    usage.provider,
+                    usage.model,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cached_tokens,
+                    usage.credits_used,
+                    usage.estimated_cost_usd,
+                    int(usage.cache_hit),
+                    usage.latency_ms,
+                    usage.outcome,
+                    int(usage.provenance_verified),
+                ),
+            )
+
+    def record_usage(self, record: UsageRecord) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO usage_records (
+                    record_id, route_plan_id, created_at, provider, model,
+                    input_tokens, output_tokens, cached_tokens, credits_used,
+                    estimated_cost_usd, cache_hit, latency_ms, outcome,
+                    provenance_verified
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.record_id,
+                    record.route_plan_id,
+                    record.created_at,
+                    record.provider,
+                    record.model,
+                    record.input_tokens,
+                    record.output_tokens,
+                    record.cached_tokens,
+                    record.credits_used,
+                    record.estimated_cost_usd,
+                    int(record.cache_hit),
+                    record.latency_ms,
+                    record.outcome,
+                    int(record.provenance_verified),
+                ),
+            )
+
+    def routing_observations(
+        self, sample_limit: int = 1000
+    ) -> dict[str, dict[str, object]]:
+        """Return bounded aggregate metadata suitable for deterministic routing."""
+
+        if not 1 <= sample_limit <= 100_000:
+            raise ValueError("routing observation sample limit must be 1..100000")
+        with closing(self._connect()) as connection, connection:
+            rows = connection.execute(
+                """
+                WITH recent AS (
+                    SELECT model, latency_ms, cache_hit, outcome
+                    FROM usage_records
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                )
+                SELECT model,
+                       ROUND(AVG(latency_ms), 3),
+                       ROUND(AVG(cache_hit), 6),
+                       COUNT(*),
+                       ROUND(AVG(CASE WHEN outcome IN
+                           ('SUCCESS', 'APPLIED', 'PATCH_READY')
+                           THEN 1.0 ELSE 0.0 END), 6)
+                FROM recent
+                GROUP BY model
+                ORDER BY model
+                """,
+                (sample_limit,),
+            ).fetchall()
+        return {
+            str(row[0]): {
+                "latency_ms": float(row[1]),
+                "cache_hit_rate": float(row[2]),
+                "sample_count": int(row[3]),
+                "success_rate": float(row[4]),
+            }
+            for row in rows
+        }
 
     def report(self) -> dict[str, Any]:
-        with self._connect() as connection:
-            routes = connection.execute("SELECT COUNT(*) FROM route_decisions").fetchone()[0]
+        with closing(self._connect()) as connection, connection:
+            routes = connection.execute(
+                "SELECT COUNT(*) FROM route_decisions"
+            ).fetchone()[0]
             runs = connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+            usage_records = connection.execute(
+                "SELECT COUNT(*) FROM usage_records"
+            ).fetchone()[0]
             rows = connection.execute(
                 """
                 SELECT requested_model, COUNT(*) AS total,
@@ -175,10 +310,28 @@ class TelemetryStore:
                 FROM runs GROUP BY requested_model ORDER BY requested_model
                 """
             ).fetchall()
+            usage = connection.execute(
+                """
+                SELECT COALESCE(SUM(input_tokens), 0),
+                       COALESCE(SUM(output_tokens), 0),
+                       COALESCE(SUM(cached_tokens), 0),
+                       COALESCE(SUM(credits_used), 0),
+                       COALESCE(SUM(estimated_cost_usd), 0)
+                FROM usage_records
+                """
+            ).fetchone()
         return {
             "schema_version": 1,
             "route_count": routes,
             "run_count": runs,
+            "usage_record_count": usage_records,
+            "usage": {
+                "input_tokens": int(usage[0]),
+                "output_tokens": int(usage[1]),
+                "cached_tokens": int(usage[2]),
+                "credits_used": float(usage[3]),
+                "estimated_cost_usd": float(usage[4]),
+            },
             "models": [
                 {
                     "model": row[0],
@@ -191,12 +344,15 @@ class TelemetryStore:
             ],
         }
 
-    def purge_metadata(self, retention_days: int = 365) -> dict[str, int]:
+    def purge_metadata(self, retention_days: int = 90) -> dict[str, int]:
         preview = self.preview_metadata_purge(retention_days)
         cutoff = preview["cutoff"]
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             deleted_runs = connection.execute(
                 "DELETE FROM runs WHERE finished_at < ?", (cutoff,)
+            ).rowcount
+            deleted_usage = connection.execute(
+                "DELETE FROM usage_records WHERE created_at < ?", (cutoff,)
             ).rowcount
             deleted_routes = connection.execute(
                 """
@@ -208,13 +364,13 @@ class TelemetryStore:
             ).rowcount
             connection.execute("PRAGMA incremental_vacuum")
             connection.execute("PRAGMA optimize")
-        return {"runs": deleted_runs, "routes": deleted_routes}
+        return {"runs": deleted_runs, "routes": deleted_routes, "usage": deleted_usage}
 
-    def preview_metadata_purge(self, retention_days: int = 365) -> dict[str, Any]:
-        if retention_days < 30:
-            raise ValueError("metadata retention must be at least 30 days")
+    def preview_metadata_purge(self, retention_days: int = 90) -> dict[str, Any]:
+        if not 30 <= retention_days <= 90:
+            raise ValueError("metadata retention must be between 30 and 90 days")
         cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             runs = connection.execute(
                 "SELECT COUNT(*) FROM runs WHERE finished_at < ?", (cutoff,)
             ).fetchone()[0]
@@ -226,4 +382,13 @@ class TelemetryStore:
                 """,
                 (cutoff,),
             ).fetchone()[0]
-        return {"runs": int(runs), "routes": int(routes), "cutoff": cutoff, "dry_run": True}
+            usage = connection.execute(
+                "SELECT COUNT(*) FROM usage_records WHERE created_at < ?", (cutoff,)
+            ).fetchone()[0]
+        return {
+            "runs": int(runs),
+            "routes": int(routes),
+            "usage": int(usage),
+            "cutoff": cutoff,
+            "dry_run": True,
+        }

@@ -7,8 +7,9 @@ import subprocess
 import tempfile
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ai_orchestrator.models import ensure_private_directory
 
@@ -56,7 +57,9 @@ def create_encrypted_archive(
     if recipient_check.returncode != 0:
         raise ArchiveError("GPG recipient is not available in the local public keyring")
 
-    root = output_root or Path.home() / ".local" / "share" / "ai-orchestrator" / "archive"
+    root = (
+        output_root or Path.home() / ".local" / "share" / "ai-orchestrator" / "archive"
+    )
     ensure_private_directory(root.parent)
     ensure_private_directory(root)
     archive_id = uuid.uuid4().hex
@@ -81,7 +84,9 @@ def create_encrypted_archive(
     manifest_path = temp_root / "manifest.json"
     temporary_output = temp_root / "archive.gpg"
     try:
-        manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2), encoding="utf-8")
+        manifest_path.write_text(
+            json.dumps(manifest, sort_keys=True, indent=2), encoding="utf-8"
+        )
         os.chmod(manifest_path, 0o600)
         archive_members = [str(path).lstrip("/").encode("utf-8") for path in files]
         archive_members.append(str(manifest_path).lstrip("/").encode("utf-8"))

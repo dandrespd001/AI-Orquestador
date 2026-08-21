@@ -20,13 +20,27 @@ class WriterTests(unittest.TestCase):
         self.repo = Path(self.temp.name) / "repo"
         self.repo.mkdir()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.email", "test@example.invalid"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Test"], check=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repo),
+                "config",
+                "user.email",
+                "test@example.invalid",
+            ],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.repo), "config", "user.name", "Test"], check=True
+        )
         (self.repo / "src").mkdir()
         (self.repo / "src" / "value.txt").write_text("old\n", encoding="utf-8")
         (self.repo / "prompt.txt").write_text("change value", encoding="utf-8")
         subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "initial"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-qm", "initial"], check=True
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -112,7 +126,9 @@ class WriterTests(unittest.TestCase):
         task = self.task()
         with WorktreeTransaction(task) as transaction:
             assert transaction.worktree is not None
-            (transaction.worktree / "src" / "value.txt").write_text("new\n", encoding="utf-8")
+            (transaction.worktree / "src" / "value.txt").write_text(
+                "new\n", encoding="utf-8"
+            )
             patch_outcome = transaction.collect_patch((".git",))
             self.assertFalse(transaction.can_apply())
             self.assertTrue(patch_outcome.patch)

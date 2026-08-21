@@ -1,0 +1,37 @@
+[Unit]
+Description=DeepSeek Harness administrative UI (loopback only)
+Requires=ai-orchestrator-broker.service
+After=ai-orchestrator-broker.service
+ConditionPathExists=/usr/bin/npx
+
+[Service]
+Type=simple
+UMask=0077
+Environment=DSH_HOME=%h/.local/share/ai-orchestrator/harness/admin
+Environment=AI_ORCHESTRATOR_SOCKET=%h/.local/share/ai-orchestrator/broker/control.sock
+Environment=NO_COLOR=1
+ExecStart=/usr/bin/npx --offline @deepseek-ai/dsh@0.1.0-rc.7 web --host 127.0.0.1 --port 3080 --no-open
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=15s
+MemoryMax=2G
+TasksMax=256
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/ai-orchestrator
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=default.target

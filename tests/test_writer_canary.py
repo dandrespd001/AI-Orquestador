@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import subprocess
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from ai_orchestrator.models import ContractError, ModelConfig, RunResult
@@ -69,7 +68,9 @@ class WriterCanaryTests(unittest.TestCase):
         self.assertNotIn("CANARY_fixed", json.dumps(receipt))
         self.assertTrue(all(row["exit_code"] == 0 for row in receipt["results"]))
         self.assertTrue(all(row["error_code"] is None for row in receipt["results"]))
-        self.assertTrue(all(not row["orchestrator_content_retained"] for row in receipt["results"]))
+        self.assertTrue(
+            all(not row["orchestrator_content_retained"] for row in receipt["results"])
+        )
 
 
 class ProfileProbeTests(unittest.TestCase):
@@ -121,7 +122,9 @@ class ProfileProbeTests(unittest.TestCase):
     def test_probing_an_unknown_profile_is_refused(self, load_models, execute) -> None:
         load_models.return_value = self.model()
         with self.assertRaises(ContractError):
-            run_writer_canaries("candidate", attempts=1, execution_profile="root_writer")
+            run_writer_canaries(
+                "candidate", attempts=1, execution_profile="root_writer"
+            )
         execute.assert_not_called()
 
     @patch("ai_orchestrator.writer_canary.execute")
@@ -172,7 +175,9 @@ class ProfileProbeTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             run_writer_canaries("candidate", attempts=1)
 
-        self.assertEqual("patch_api_writer", execute.call_args.args[1].execution_profile)
+        self.assertEqual(
+            "patch_api_writer", execute.call_args.args[1].execution_profile
+        )
 
 
 if __name__ == "__main__":

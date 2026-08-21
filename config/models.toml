@@ -161,6 +161,107 @@ trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "kimi_acp_writer"
 
+# Modelos observados en la cuenta Abacus autenticada el 2026-08-20. Son de
+# primera clase para inventario y para `orchestrator_delegate_abacus`, pero no
+# aparecen en roles.toml ni en perfiles: el enrutador core no puede seleccionarlos
+# por accidente ni tratarlos como escritores con acceso al repositorio.
+[[models]]
+id = "abacus-grok-4.6"
+family = "xai-grok"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "Grok 4.6"
+official = true
+status = "available"
+roles = ["architecture", "review", "research", "security"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.92
+included_quota = true
+marginal_cost_per_million = 0.0
+
+[[models]]
+id = "abacus-qwen3.8-max"
+family = "qwen"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "Qwen3.8 Max"
+official = true
+status = "available"
+roles = ["implementation", "bulk_refactor", "long_context", "tests"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.92
+included_quota = true
+marginal_cost_per_million = 0.0
+
+[[models]]
+id = "abacus-qwen3.8-27b"
+family = "qwen"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "Qwen3.8 27B"
+official = true
+status = "candidate"
+roles = ["tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.51
+included_quota = true
+marginal_cost_per_million = 0.0
+
+[[models]]
+id = "abacus-glm-5.3"
+family = "zai-glm"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "ZAI GLM 5.3"
+official = true
+status = "candidate"
+roles = ["review", "implementation"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.50
+included_quota = true
+marginal_cost_per_million = 0.0
+
+# FX de Vercel Labs 0.0.4, autenticado por OAuth y observado con
+# zai/glm-5.2 el 2026-08-20. La promoción pública se anuncia hasta alrededor
+# del 2026-09-02; se corta un día antes para que nunca pase a pago por desfase
+# horario o cambio de condiciones. Sólo lectura: los parches siguen usando los
+# writers aislados ya promovidos.
+[[models]]
+id = "fx-glm-5.2-promo"
+family = "zai-glm"
+provider = "fx"
+transport = "fx_cli"
+route_model = "zai/glm-5.2"
+official = true
+status = "available"
+roles = ["review", "research", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.82
+included_quota = true
+marginal_cost_per_million = 0.0
+context_window = 1000000
+available_until = "2026-09-01"
+
 # Public/local candidates are intentionally not routable until a five-run
 # writer canary produces promotion_ready=true. Their fixed route IDs come from
 # the live OmniRoute catalog; no auto/* combo is used, so provenance is exact.

@@ -4,17 +4,24 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 
 def response_for(path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    marker = str(payload.get("metadata", {}).get("test_case", "")) if isinstance(payload.get("metadata"), dict) else ""
+    marker = (
+        str(payload.get("metadata", {}).get("test_case", ""))
+        if isinstance(payload.get("metadata"), dict)
+        else ""
+    )
     if marker == "force-429":
-        return 429, {"error": {"type": "rate_limit_error", "message": "synthetic rate limit"}}
+        return 429, {
+            "error": {"type": "rate_limit_error", "message": "synthetic rate limit"}
+        }
     if marker == "force-500":
-        return 500, {"error": {"type": "server_error", "message": "synthetic upstream failure"}}
+        return 500, {
+            "error": {"type": "server_error", "message": "synthetic upstream failure"}
+        }
     model = str(payload.get("model", "mock-model"))
     if path.endswith("/responses"):
         return 200, {
@@ -22,7 +29,13 @@ def response_for(path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any
             "object": "response",
             "model": model,
             "status": "completed",
-            "output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "gateway-ok"}]}],
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "gateway-ok"}],
+                }
+            ],
             "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
         }
     message: dict[str, Any] = {"role": "assistant", "content": "gateway-ok"}
@@ -43,7 +56,13 @@ def response_for(path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any
         "object": "chat.completion",
         "created": 0,
         "model": model,
-        "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if payload.get("tools") else "stop"}],
+        "choices": [
+            {
+                "index": 0,
+                "message": message,
+                "finish_reason": "tool_calls" if payload.get("tools") else "stop",
+            }
+        ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
     }
 
@@ -51,13 +70,13 @@ def response_for(path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any
 class MockHandler(BaseHTTPRequestHandler):
     server_version = "AIOrchestratorMock/1"
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path in {"/health", "/healthz"}:
             self._json(200, {"status": "ok"})
             return
         self._json(404, {"error": {"message": "not found"}})
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if self.path not in {"/v1/chat/completions", "/v1/responses"}:
             self._json(404, {"error": {"message": "not found"}})
             return
@@ -67,8 +86,8 @@ class MockHandler(BaseHTTPRequestHandler):
                 raise ValueError("invalid length")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
-                raise ValueError("request must be an object")
-        except (ValueError, json.JSONDecodeError):
+                raise TypeError("request must be an object")
+        except (TypeError, ValueError, json.JSONDecodeError):
             self._json(400, {"error": {"message": "invalid JSON"}})
             return
         status, response = response_for(self.path, payload)

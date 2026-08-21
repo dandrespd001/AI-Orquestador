@@ -7,15 +7,19 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai_orchestrator.models import ContractError
-from ai_orchestrator.optimization import load_prompt_experiment, prompt_optimization_preflight
-
+from ai_orchestrator.optimization import (
+    load_prompt_experiment,
+    prompt_optimization_preflight,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class OptimizationTests(unittest.TestCase):
     def test_pinned_experiment_has_disjoint_admissible_dataset(self) -> None:
-        experiment, dataset, rows = load_prompt_experiment(ROOT / "evals" / "dspy" / "tests-v1.toml")
+        experiment, dataset, rows = load_prompt_experiment(
+            ROOT / "evals" / "dspy" / "tests-v1.toml"
+        )
         self.assertEqual("dspy", experiment.engine)
         self.assertEqual("BootstrapFewShot", experiment.optimizer)
         self.assertEqual(40, experiment.max_calls)
@@ -27,7 +31,10 @@ class OptimizationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             baseline = Path(raw) / "baseline.json"
             baseline.write_text(json.dumps({"status": "PASSED"}), encoding="utf-8")
-            with patch("ai_orchestrator.optimization.importlib.metadata.version", return_value="3.3.0"):
+            with patch(
+                "ai_orchestrator.optimization.importlib.metadata.version",
+                return_value="3.3.0",
+            ):
                 report = prompt_optimization_preflight(
                     ROOT / "evals" / "dspy" / "tests-v1.toml", baseline
                 )
@@ -37,7 +44,9 @@ class OptimizationTests(unittest.TestCase):
 
             baseline.write_text(json.dumps({"status": "FAILED"}), encoding="utf-8")
             with self.assertRaises(ContractError):
-                prompt_optimization_preflight(ROOT / "evals" / "dspy" / "tests-v1.toml", baseline)
+                prompt_optimization_preflight(
+                    ROOT / "evals" / "dspy" / "tests-v1.toml", baseline
+                )
 
 
 if __name__ == "__main__":

@@ -22,7 +22,9 @@ class CredentialTests(unittest.TestCase):
                 encoding="utf-8",
             )
             path.chmod(0o600)
-            self.assertEqual("runtime-secret", private_dotenv_value(path, "OMNIROUTE_API_KEY"))
+            self.assertEqual(
+                "runtime-secret", private_dotenv_value(path, "OMNIROUTE_API_KEY")
+            )
             self.assertIsNone(private_dotenv_value(path, "MISSING"))
 
     def test_permissive_or_symlinked_files_are_rejected(self) -> None:

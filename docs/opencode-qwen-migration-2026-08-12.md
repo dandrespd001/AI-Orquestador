@@ -2,13 +2,17 @@
 
 Fecha de decision: 2026-08-12.
 
+> Actualización 2026-08-20: la superficie Anthropic de MiniMax fue retirada.
+> La ruta vigente usa OpenAI Responses API en
+> `https://api.minimax.io/v1/responses`, con `MiniMax-M3` y `store=false`.
+
 ## Estado objetivo
 
 - Codex y Claude conservan sus clientes nativos.
 - DeepSeek se ejecuta con Qwen Code y el modelo explicito
   `ds/deepseek-v4-flash` de OmniRoute.
-- MiniMax se ejecuta con Qwen Code contra
-  `https://api.minimax.io/anthropic`; el cliente añade `/v1/messages`.
+- MiniMax usa Qwen Code para lectura con autenticación OpenAI y Responses API
+  `https://api.minimax.io/v1/responses` para escritura supervisada.
 - Kimi conserva su cliente oficial mediante ACP y no participa en fallback
   automatico.
 - OpenCode queda disponible solo detras de `tools/oc_guard.sh` en CHUNSA001.

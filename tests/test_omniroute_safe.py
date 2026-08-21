@@ -8,10 +8,10 @@ from unittest.mock import patch
 
 from ai_orchestrator.omniroute_safe import (
     EXIT_CONFIG,
+    SafeOmniRouteError,
     _environment,
     _validate_arguments,
     main,
-    SafeOmniRouteError,
 )
 
 
@@ -23,7 +23,10 @@ class OmniRouteSafeTests(unittest.TestCase):
             ("storage", "purge"),
             ("auth", "export"),
         ):
-            with self.subTest(arguments=arguments), self.assertRaises(SafeOmniRouteError):
+            with (
+                self.subTest(arguments=arguments),
+                self.assertRaises(SafeOmniRouteError),
+            ):
                 _validate_arguments(arguments)
 
     def test_environment_contains_only_runtime_key_and_loopback_base(self) -> None:
@@ -43,12 +46,18 @@ class OmniRouteSafeTests(unittest.TestCase):
             executable.write_text("#!/bin/sh\n", encoding="utf-8")
             executable.chmod(0o700)
             with (
-                patch("ai_orchestrator.omniroute_safe._executable", return_value=executable),
+                patch(
+                    "ai_orchestrator.omniroute_safe._executable",
+                    return_value=executable,
+                ),
                 patch(
                     "ai_orchestrator.omniroute_safe.omniroute_runtime_key",
                     return_value="runtime-secret",
                 ),
-                patch("ai_orchestrator.omniroute_safe.os.execve", side_effect=OSError("stop")) as run,
+                patch(
+                    "ai_orchestrator.omniroute_safe.os.execve",
+                    side_effect=OSError("stop"),
+                ) as run,
                 self.assertRaises(OSError),
             ):
                 main(("doctor",))

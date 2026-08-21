@@ -1,0 +1,43 @@
+schema_version = 1
+
+[components.deepseek-harness]
+version = "0.1.0-rc.7"
+source = "npm:@deepseek-ai/dsh"
+auto_update = false
+compatibility_tests = ["contracts", "broker", "sessions", "client-catalog"]
+security_tests = ["loopback-only", "socket-0600", "admin-profile-clean", "secret-redaction"]
+
+[components.abacus-cli]
+version = "2.6.9"
+source = "npm:@abacus-ai/cli"
+auto_update = false
+compatibility_tests = ["cli-version", "human-login", "quota-status"]
+security_tests = ["no-api-key-argv", "included-credits-only", "no-auto-purchase"]
+
+[components.kimi-cli]
+version = "managed"
+source = "official:kimi-code"
+auto_update = false
+compatibility_tests = ["oauth-store", "dynamic-model-discovery", "alias-canary"]
+security_tests = ["oauth-token-redaction", "no-global-mcp"]
+
+[components.qwen-cli]
+version = "managed"
+source = "official:qwen-code"
+auto_update = false
+compatibility_tests = ["openai-provider", "bounded-tools"]
+security_tests = ["no-shell", "no-secret-persistence"]
+
+[components.opencode-cli]
+version = "managed"
+source = "official:opencode"
+auto_update = false
+compatibility_tests = ["profile-config"]
+security_tests = ["official-oauth-store", "no-global-mcp"]
+
+[components.fx-cli]
+version = "0.0.4"
+source = "github:vercel-labs/fx"
+auto_update = false
+compatibility_tests = ["oauth-store", "glm-5.2-model", "json-ask", "no-save"]
+security_tests = ["stdin-prompt", "ask-mode", "no-additional-dirs", "promotion-expiry"]

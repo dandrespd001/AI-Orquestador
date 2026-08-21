@@ -9,12 +9,12 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from ai_orchestrator.benchmark import atomic_private_json
 from ai_orchestrator.models import ContractError, ensure_private_directory
-
 
 PROMPTFOO_VERSION = "0.122.0"
 PROMPTFOO_SECURITY_ENV = {
@@ -38,7 +38,9 @@ def _network_denied_command(command: list[str]) -> list[str]:
 
 
 def promptfoo_binary(project_root: Path) -> Path:
-    candidate = project_root / "evals" / "promptfoo" / "node_modules" / ".bin" / "promptfoo"
+    candidate = (
+        project_root / "evals" / "promptfoo" / "node_modules" / ".bin" / "promptfoo"
+    )
     if candidate.is_symlink():
         resolved = candidate.resolve()
     else:
@@ -48,7 +50,9 @@ def promptfoo_binary(project_root: Path) -> Path:
     return resolved
 
 
-def promptfoo_environment(home: Path, inherited: Mapping[str, str] | None = None) -> dict[str, str]:
+def promptfoo_environment(
+    home: Path, inherited: Mapping[str, str] | None = None
+) -> dict[str, str]:
     source = inherited or os.environ
     allowed = {"PATH", "LANG", "LC_ALL", "TERM", "NO_COLOR"}
     environment = {key: value for key, value in source.items() if key in allowed}
@@ -113,7 +117,9 @@ def run_quality_eval(
         raise ContractError("quality eval timeout must be between 1 and 1800 seconds")
 
     executable = promptfoo_binary(root)
-    state_parent = Path(os.environ.get("AI_ORCHESTRATOR_TMP", f"/tmp/ai-orchestrator-{os.getuid()}"))
+    state_parent = Path(
+        os.environ.get("AI_ORCHESTRATOR_TMP", f"/tmp/ai-orchestrator-{os.getuid()}")
+    )
     ensure_private_directory(state_parent)
     with tempfile.TemporaryDirectory(prefix="quality-", dir=state_parent) as temporary:
         home = Path(temporary)
@@ -136,8 +142,7 @@ def run_quality_eval(
             cwd=config.parent,
             env=promptfoo_environment(home),
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=timeout_seconds,
             check=False,
         )
@@ -163,7 +168,9 @@ def run_quality_eval(
             "stdout_sha256": hashlib.sha256(completed.stdout).hexdigest(),
             "stderr_sha256": hashlib.sha256(completed.stderr).hexdigest(),
             "raw_results_retained": False,
-            "status": "PASSED" if completed.returncode == 0 and failures == 0 and errors == 0 else "FAILED",
+            "status": "PASSED"
+            if completed.returncode == 0 and failures == 0 and errors == 0
+            else "FAILED",
         }
         atomic_private_json(output, receipt)
         return receipt
@@ -171,14 +178,17 @@ def run_quality_eval(
 
 def promptfoo_preflight(project_root: Path) -> dict[str, Any]:
     binary = promptfoo_binary(project_root.resolve())
-    state_parent = Path(os.environ.get("AI_ORCHESTRATOR_TMP", f"/tmp/ai-orchestrator-{os.getuid()}"))
+    state_parent = Path(
+        os.environ.get("AI_ORCHESTRATOR_TMP", f"/tmp/ai-orchestrator-{os.getuid()}")
+    )
     ensure_private_directory(state_parent)
-    with tempfile.TemporaryDirectory(prefix="promptfoo-preflight-", dir=state_parent) as raw:
+    with tempfile.TemporaryDirectory(
+        prefix="promptfoo-preflight-", dir=state_parent
+    ) as raw:
         completed = subprocess.run(
             _network_denied_command([str(binary), "--version"]),
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             env=promptfoo_environment(Path(raw)),
             timeout=30,
             check=False,

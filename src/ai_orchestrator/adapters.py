@@ -23,6 +23,7 @@ from ai_orchestrator.models import (
     TaskSpec,
     ensure_private_directory,
 )
+from ai_orchestrator.provider_adapters import require_adapter
 from ai_orchestrator.supervisor import ProcessOutcome, run_supervised
 from ai_orchestrator.writer import (
     WorktreeTransaction,
@@ -62,7 +63,9 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         allowed.update({"KIMI_CODE_HOME", "KIMI_LOG_LEVEL"})
     result = {key: value for key, value in os.environ.items() if key in allowed}
     if transport == "qwen_omniroute_cli":
-        runtime_key = result.pop("OMNIROUTE_API_KEY", None) or omniroute_runtime_key(result)
+        runtime_key = result.pop("OMNIROUTE_API_KEY", None) or omniroute_runtime_key(
+            result
+        )
         if runtime_key:
             result["OPENAI_API_KEY"] = runtime_key
         result["OPENAI_BASE_URL"] = result.pop(
@@ -71,8 +74,18 @@ def _minimal_environment(transport: str) -> dict[str, str]:
     elif transport == "qwen_minimax_cli":
         runtime_key = minimax_runtime_key(result)
         result.pop("MINIMAX_API_KEY", None)
+        # 2026-08-20: se pasa a la superficie COMPATIBLE CON OPENAI. La
+        # configuracion Anthropic de abajo se verifico el 2026-08-12 y
+        # funcionaba entonces, pero el 2026-08-19 una tarea real devolvio
+        # output_bytes=0 en 5,6 s sin error de red (status MALFORMED_PATCH).
+        # El Director verifico a mano con `qwen --auth-type openai` sobre
+        # https://api.minimax.io/v1 que ese endpoint SI responde. Lo mas
+        # probable es que MiniMax haya cambiado su superficie Anthropic.
+        # Para revertir: restaurar auth_type "anthropic" aqui y en get_command.
         if runtime_key:
-            result["ANTHROPIC_API_KEY"] = runtime_key
+            result["OPENAI_API_KEY"] = runtime_key
+        result["OPENAI_BASE_URL"] = "https://api.minimax.io/v1"
+        # --- HISTORICO, desactivado el 2026-08-20 (ver arriba) ---
         # SIN sufijo /v1: el cliente Anthropic de Qwen lo anade el mismo. Con
         # ".../anthropic/v1" la peticion sale a /anthropic/v1/v1/messages y el
         # servidor devuelve 404 — que Qwen envuelve como subtype=success,
@@ -80,7 +93,7 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         # found]" dentro. Verificado el 2026-08-12: /anthropic/v1/v1/messages
         # da 404 y /anthropic/v1/messages da 401, y con esta base el canario
         # devuelve el token exacto.
-        result["ANTHROPIC_BASE_URL"] = "https://api.minimax.io/anthropic"
+        # result["ANTHROPIC_BASE_URL"] = "https://api.minimax.io/anthropic"
     elif transport == "kimi_cli":
         result["KIMI_DISABLE_TELEMETRY"] = "1"
         result["KIMI_CODE_NO_AUTO_UPDATE"] = "1"
@@ -90,6 +103,15 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         result["KIMI_SUBAGENT_TIMEOUT_MS"] = "1"
         result["KIMI_CODE_BUILTIN_PRODUCT_SKILLS"] = "0"
         result["KIMI_LOG_LEVEL"] = "error"
+    elif transport == "fx_cli":
+        # OAuth remains in ~/.fx/auth.json. API keys are deliberately absent
+        # from the allowlist, and noninteractive `ask` stops on every unresolved
+        # sensitive tool request instead of invoking the paid auto-reviewer.
+        result["FX_MODEL"] = "zai/glm-5.2"
+        result["FX_PERMISSION_MODE"] = "ask"
+        result["FX_MAX_AGENT_STEPS"] = "12"
+        result["FX_AUTO_UPGRADE"] = "0"
+        result["FX_HERDR"] = "0"
     result.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
     result["PYTHONDONTWRITEBYTECODE"] = "1"
     return result
@@ -134,18 +156,25 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
         ]
         return command
     if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
-        auth_type = "openai" if decision.transport == "qwen_omniroute_cli" else "anthropic"
+        # 2026-08-20: MiniMax pasa tambien a "openai" — su superficie Anthropic
+        # dejo de responder (output_bytes=0). Antes: "openai" solo para omniroute.
+        auth_type = "openai"
         # Guarded writers never receive a writable mount. They return a diff,
         # which the orchestrator validates and applies inside its worktree.
         guarded_patch = writing and decision.execution_profile == "patch_api_writer"
         return [
             "qwen",
-            "--auth-type", auth_type,
+            "--auth-type",
+            auth_type,
             "--bare",
-            "--output-format", "json",
-            "--approval-mode", "plan" if guarded_patch or not writing else "auto-edit",
-            "--exclude-tools", "run_shell_command,agent,web_fetch,web_search,skill",
-            "--max-wall-time", f"{task.timeout_seconds}s",
+            "--output-format",
+            "json",
+            "--approval-mode",
+            "plan" if guarded_patch or not writing else "auto-edit",
+            "--exclude-tools",
+            "run_shell_command,agent,web_fetch,web_search,skill",
+            "--max-wall-time",
+            f"{task.timeout_seconds}s",
             # 30, no 8. Con 8 solo caben los canarios: una tarea real de
             # analisis sobre el repo consumio 23 turnos de asistente y 10 de
             # usuario (medido el 2026-08-12 sobre spatial_hash de CHUNSA001).
@@ -153,13 +182,28 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             # supervisor traduce a TURN_BUDGET_EXCEEDED — un limite que no deja
             # completar nada no acota el riesgo, solo lo esconde.
             # El techo real sigue siendo --max-wall-time y --max-tool-calls.
-            "--max-session-turns", "30",
-            "--max-tool-calls", "32",
+            "--max-session-turns",
+            "30",
+            "--max-tool-calls",
+            "32",
             "--model",
             str(decision.requested_route_model),
         ]
     if decision.transport == "kimi_cli":
         return ["kimi", "acp"]
+    if decision.transport == "fx_cli":
+        if writing:
+            raise AdapterError("HANDOFF_REQUIRED", "FX promotional route is read-only")
+        return [
+            "fx",
+            "--no-additional-dirs",
+            "--context-limit",
+            "project_instructions_total_bytes=32768",
+            "ask",
+            "--json",
+            "--no-save",
+            "--no-color",
+        ]
     if decision.transport == "omniroute":
         return [
             "omniroute",
@@ -173,7 +217,9 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             "--file",
             str(prompt_path),
         ]
-    raise AdapterError("HANDOFF_REQUIRED", f"unsupported supervised transport: {decision.transport}")
+    raise AdapterError(
+        "HANDOFF_REQUIRED", f"unsupported supervised transport: {decision.transport}"
+    )
 
 
 # Cada CLI ejecutor escribe su propio estado dentro del workspace. No es
@@ -199,7 +245,9 @@ def _qwen_sandbox_command(
     qwen_root_candidates: list[Path] = []
     try:
         launcher = wrapper.read_text(encoding="utf-8")[:4096]
-        matched = re.search(r"['\"](/[^'\"]+/qwen-code-[^/'\"]+)/bin/qwen['\"]", launcher)
+        matched = re.search(
+            r"['\"](/[^'\"]+/qwen-code-[^/'\"]+)/bin/qwen['\"]", launcher
+        )
         if matched:
             qwen_root_candidates.append(Path(matched.group(1)))
     except (OSError, UnicodeError):
@@ -208,7 +256,9 @@ def _qwen_sandbox_command(
     if not qwen_root_candidates:
         # The managed installation keeps the versioned runtime alongside the
         # wrapper under ~/.local/lib.
-        qwen_root_candidates = sorted(Path(qwen).resolve().parents[1].glob("lib/qwen-code-*"))
+        qwen_root_candidates = sorted(
+            Path(qwen).resolve().parents[1].glob("lib/qwen-code-*")
+        )
     if not qwen_root_candidates:
         qwen_root_candidates = sorted(Path.home().glob(".local/lib/qwen-code-*"))
     if not qwen_root_candidates:
@@ -220,18 +270,33 @@ def _qwen_sandbox_command(
         "--share-net",
         "--die-with-parent",
         "--new-session",
-        "--ro-bind", "/", "/",
-        "--tmpfs", "/home",
-        "--tmpfs", "/tmp",
-        "--tmpfs", "/opt",
-        "--proc", "/proc",
-        "--dev", "/dev",
-        "--dir", "/opt/qwen",
-        "--ro-bind", str(qwen_root), "/opt/qwen",
-        "--dir", "/tmp/workspace",
-        "--bind" if writable else "--ro-bind", str(worktree), "/tmp/workspace",
-        "--dir", "/tmp/qwen-home",
-        "--chdir", "/tmp/workspace",
+        "--ro-bind",
+        "/",
+        "/",
+        "--tmpfs",
+        "/home",
+        "--tmpfs",
+        "/tmp",
+        "--tmpfs",
+        "/opt",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--dir",
+        "/opt/qwen",
+        "--ro-bind",
+        str(qwen_root),
+        "/opt/qwen",
+        "--dir",
+        "/tmp/workspace",
+        "--bind" if writable else "--ro-bind",
+        str(worktree),
+        "/tmp/workspace",
+        "--dir",
+        "/tmp/qwen-home",
+        "--chdir",
+        "/tmp/workspace",
         "--",
         "/opt/qwen/bin/qwen",
         *command[1:],
@@ -284,7 +349,11 @@ def _run_once(
     prompt: bytes,
     cwd: Path,
 ) -> tuple[ProcessOutcome, str | None, bool]:
-    if task.write_mode != "read_only" and decision.execution_profile == "patch_api_writer":
+    require_adapter(str(decision.provider), str(decision.transport))
+    if (
+        task.write_mode != "read_only"
+        and decision.execution_profile == "patch_api_writer"
+    ):
         worker_environment = _minimal_environment(str(decision.transport))
         if decision.transport == "qwen_omniroute_cli":
             credential = omniroute_runtime_key()
@@ -318,7 +387,13 @@ def _run_once(
             worker_result = json.loads(worker.stdout)
             patch = base64.b64decode(worker_result["patch_b64"], validate=True)
             reported_model = str(worker_result["reported_model"])
-        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ):
             return ProcessOutcome(1, b"", b"malformed patch worker output"), None, False
         envelope = json.dumps(
             [
@@ -355,7 +430,11 @@ def _run_once(
                 prompt=prompt,
                 timeout_seconds=task.timeout_seconds,
             )
-            return ProcessOutcome(0, outcome.stdout, outcome.stderr), outcome.reported_model, True
+            return (
+                ProcessOutcome(0, outcome.stdout, outcome.stderr),
+                outcome.reported_model,
+                True,
+            )
         except AcpError as exc:
             return ProcessOutcome(1, b"", str(exc).encode("utf-8")), None, False
     if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
@@ -383,7 +462,11 @@ def _run_once(
     return outcome, reported, provenance
 
 
-def _process_status(outcome: ProcessOutcome, decision: RouteDecision) -> tuple[str, str | None]:
+def _process_status(
+    outcome: ProcessOutcome, decision: RouteDecision
+) -> tuple[str, str | None]:
+    if outcome.output_limited:
+        return "OUTPUT_LIMIT_EXCEEDED", "OUTPUT_LIMIT_EXCEEDED"
     if outcome.timed_out:
         return "WALL_TIMEOUT", "WALL_TIMEOUT"
     if outcome.returncode != 0:
@@ -449,7 +532,11 @@ def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None,
     if not reported:
         return None, False
     expected = str(decision.requested_route_model)
-    return reported, reported in {expected, expected.split("/", 1)[-1], decision.selected_model}
+    return reported, reported in {
+        expected,
+        expected.split("/", 1)[-1],
+        decision.selected_model,
+    }
 
 
 def _qwen_error(stdout: bytes, stderr: bytes) -> str | None:
@@ -473,7 +560,9 @@ def _qwen_error(stdout: bytes, stderr: bytes) -> str | None:
         return "MALFORMED_OUTPUT"
     if not isinstance(payload, list):
         return "MALFORMED_OUTPUT"
-    results = [row for row in payload if isinstance(row, dict) and row.get("type") == "result"]
+    results = [
+        row for row in payload if isinstance(row, dict) and row.get("type") == "result"
+    ]
     if not results:
         return "MALFORMED_OUTPUT"
     result = results[-1]
@@ -499,13 +588,17 @@ def _qwen_result_text(stdout: bytes) -> bytes:
         raise WriterError("MALFORMED_PATCH", "Qwen did not return JSON") from exc
     if not isinstance(payload, list):
         raise WriterError("MALFORMED_PATCH", "Qwen result envelope is not a list")
-    results = [row for row in payload if isinstance(row, dict) and row.get("type") == "result"]
+    results = [
+        row for row in payload if isinstance(row, dict) and row.get("type") == "result"
+    ]
     final = results[-1].get("result") if results else None
     if not isinstance(final, str):
         raise WriterError("MALFORMED_PATCH", "Qwen result has no textual patch")
     patch = final.strip()
     if not patch.startswith("diff --git ") or "```" in patch:
-        raise WriterError("MALFORMED_PATCH", "Qwen result is not a bare git unified diff")
+        raise WriterError(
+            "MALFORMED_PATCH", "Qwen result is not a bare git unified diff"
+        )
     return (patch + "\n").encode("utf-8")
 
 
@@ -531,6 +624,25 @@ def _atomic_private_write(path: Path, data: bytes) -> None:
         raise
 
 
+def _read_bounded_prompt(path: Path, max_context_tokens: int) -> bytes:
+    """Read at most the deterministic UTF-8 budget used by routing.
+
+    Four bytes per token is an intentionally simple upper estimate. Provider
+    tokenizers remain authoritative for usage accounting, but no transport may
+    receive an unbounded prompt while advertising a context budget.
+    """
+
+    max_bytes = max_context_tokens * 4
+    with path.open("rb") as source:
+        prompt = source.read(max_bytes + 1)
+    if len(prompt) > max_bytes:
+        raise AdapterError(
+            "CONTEXT_BUDGET_EXCEEDED",
+            f"prompt exceeds the configured {max_context_tokens}-token budget",
+        )
+    return prompt
+
+
 def execute(
     task: TaskSpec,
     decision: RouteDecision,
@@ -546,7 +658,7 @@ def execute(
     if prompt_path is None:
         raise AdapterError("PROMPT_REQUIRED", "run requires prompt_file")
 
-    prompt = prompt_path.read_bytes()
+    prompt = _read_bounded_prompt(prompt_path, task.max_context_tokens)
     started = datetime.now(UTC)
     start_ns = time.monotonic_ns()
     stdout = b""
@@ -617,12 +729,17 @@ def execute(
                             status, error_code = "PATCH_READY", "WRITER_OUTPUT_UNUSABLE"
                         break
                     if not provenance:
-                        status, error_code = "PROVENANCE_UNVERIFIED", "PROVENANCE_UNVERIFIED"
+                        status, error_code = (
+                            "PROVENANCE_UNVERIFIED",
+                            "PROVENANCE_UNVERIFIED",
+                        )
                         stdout = outcome.stdout
                         break
 
                     if patch_transport:
-                        transaction.apply_candidate_patch(_qwen_result_text(outcome.stdout))
+                        transaction.apply_candidate_patch(
+                            _qwen_result_text(outcome.stdout)
+                        )
 
                     transaction.discard_tool_state(
                         TOOL_STATE_DIRECTORIES.get(str(decision.transport), ())
@@ -651,9 +768,15 @@ def execute(
                             transaction.apply(patch.patch)
                             status, error_code = "APPLIED", None
                         else:
-                            if task.write_mode == "validated_apply" and not native_writer:
+                            if (
+                                task.write_mode == "validated_apply"
+                                and not native_writer
+                            ):
                                 error_code = "EXTERNAL_WRITER_REVIEW_REQUIRED"
-                            elif task.write_mode == "validated_apply" and not transaction.can_apply():
+                            elif (
+                                task.write_mode == "validated_apply"
+                                and not transaction.can_apply()
+                            ):
                                 error_code = "DIRTY_WORKTREE"
                             else:
                                 error_code = None
@@ -689,7 +812,9 @@ def execute(
     if output_path is not None and stdout:
         resolved_output = output_path.expanduser().resolve()
         if resolved_output.is_relative_to(Path(task.repo).resolve()):
-            raise AdapterError("OUTPUT_IN_REPO_FORBIDDEN", "model output must remain in staging")
+            raise AdapterError(
+                "OUTPUT_IN_REPO_FORBIDDEN", "model output must remain in staging"
+            )
         _atomic_private_write(resolved_output, stdout)
 
     result = RunResult(

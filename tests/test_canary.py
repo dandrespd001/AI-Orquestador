@@ -12,7 +12,11 @@ class CanaryTests(unittest.TestCase):
     def test_environment_never_forwards_provider_credentials(self) -> None:
         with patch.dict(
             os.environ,
-            {"HOME": "/tmp/home", "PATH": "/usr/bin", "ANTHROPIC_AUTH_TOKEN": "forbidden"},
+            {
+                "HOME": "/tmp/home",
+                "PATH": "/usr/bin",
+                "ANTHROPIC_AUTH_TOKEN": "forbidden",
+            },
             clear=True,
         ):
             environment = _environment()
@@ -20,9 +24,14 @@ class CanaryTests(unittest.TestCase):
         self.assertEqual("/tmp/home", environment["HOME"])
 
     @patch("ai_orchestrator.canary.secrets.token_hex", return_value="abc123")
-    @patch("ai_orchestrator.canary.shutil.which", side_effect=lambda value: "/usr/bin/" + value)
+    @patch(
+        "ai_orchestrator.canary.shutil.which",
+        side_effect=lambda value: "/usr/bin/" + value,
+    )
     @patch("ai_orchestrator.canary.run_supervised")
-    def test_quota_is_degraded_without_retaining_content(self, run, _which, _token) -> None:
+    def test_quota_is_degraded_without_retaining_content(
+        self, run, _which, _token
+    ) -> None:
         qwen_success = (
             b'[{"type":"system","model":"ds/deepseek-v4-flash"},'
             b'{"type":"result","subtype":"success","is_error":false,'
@@ -45,7 +54,10 @@ class CanaryTests(unittest.TestCase):
             [row["status"] for row in receipt["providers"]],
         )
         self.assertTrue(
-            all(row.get("orchestrator_content_retained") is False for row in receipt["providers"])
+            all(
+                row.get("orchestrator_content_retained") is False
+                for row in receipt["providers"]
+            )
         )
 
     @patch("ai_orchestrator.canary.secrets.token_hex", return_value="abc123")

@@ -10,7 +10,6 @@ import tempfile
 import time
 from pathlib import Path
 
-
 HOME = Path.home()
 ENV_PATH = HOME / ".omniroute" / ".env"
 CREDENTIAL_ROOT = HOME / ".config" / "ai-orchestrator" / "credentials"
@@ -30,7 +29,11 @@ NAMES = {
 
 def _private_file(path: Path) -> None:
     metadata = path.lstat()
-    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
+    if (
+        path.is_symlink()
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+    ):
         raise RuntimeError(f"unsafe private file: {path}")
     if stat.S_IMODE(metadata.st_mode) & 0o077:
         raise RuntimeError(f"private file has permissive mode: {path}")
@@ -82,7 +85,11 @@ def main() -> int:
         if _decrypted(credential_name) != plaintext[source_name]:
             raise RuntimeError(f"encrypted credential does not match: {source_name}")
     if not args.apply:
-        print(json.dumps({"status": "READY", "verified": sorted(NAMES), "values_exposed": False}))
+        print(
+            json.dumps(
+                {"status": "READY", "verified": sorted(NAMES), "values_exposed": False}
+            )
+        )
         return 0
 
     BACKUP_ROOT.mkdir(parents=True, mode=0o700)

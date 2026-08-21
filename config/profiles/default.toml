@@ -10,6 +10,7 @@ allowed_models = [
   "deepseek-v4-flash",
   "MiniMax-M3",
   "kimi-official",
+  "fx-glm-5.2-promo",
   "local-qwen36-agent",
   "gemini-free-fast",
   "qwen-web-max",
@@ -21,3 +22,7 @@ protected_path_prefixes = [".env", ".git", ".codex", ".claude", ".agents", ".kim
 deterministic_gates = []
 minimax_mode = "direct"
 public_repository = false
+allow_paid_routes = false
+max_marginal_cost_usd = 0.0
+capability_packages = []
+extensions = []

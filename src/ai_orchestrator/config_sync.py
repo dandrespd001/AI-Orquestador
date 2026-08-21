@@ -12,9 +12,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ai_orchestrator.capabilities import load_capability_packages
 from ai_orchestrator.config import load_gates, load_models, load_profile, load_roles
+from ai_orchestrator.extensions import load_extension_policy
 from ai_orchestrator.models import ContractError, ensure_private_directory
-
+from ai_orchestrator.providers import load_provider_specs, validate_provider_catalog
+from ai_orchestrator.updates import load_component_pins
 
 MANIFEST_NAME = ".generation.json"
 
@@ -27,13 +30,25 @@ def canonical_config_root() -> Path:
 
 
 def _public_files(root: Path) -> tuple[Path, ...]:
-    candidates = [root / "models.toml", root / "roles.toml", root / "gates.toml"]
+    candidates = [
+        root / "models.toml",
+        root / "roles.toml",
+        root / "gates.toml",
+        root / "providers.toml",
+        root / "capability-packages.toml",
+        root / "components.toml",
+        root / "extension-policy.toml",
+    ]
     profiles = root / "profiles"
     if profiles.is_dir() and not profiles.is_symlink():
         candidates.extend(sorted(profiles.glob("*.toml")))
     files: list[Path] = []
     for path in candidates:
-        if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(root):
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or not path.resolve().is_relative_to(root)
+        ):
             raise ContractError(f"missing or unsafe canonical config: {path}")
         files.append(path)
     return tuple(files)
@@ -50,6 +65,15 @@ def _validate_source(root: Path) -> None:
     load_models(root)
     load_roles(root)
     load_gates(root)
+    load_provider_specs(root)
+    provider_status = validate_provider_catalog(root)
+    if not provider_status["ok"]:
+        raise ContractError(
+            "invalid provider catalog: " + "; ".join(provider_status["errors"])
+        )
+    load_capability_packages(root)
+    load_component_pins(root)
+    load_extension_policy(root)
     profiles = root / "profiles"
     for path in profiles.glob("*.toml"):
         load_profile(path.stem, root)
@@ -107,7 +131,9 @@ def apply_config_sync(source: Path, target: Path) -> dict[str, Any]:
     ensure_private_directory(target)
     backup_root: Path | None = None
     if before["drift"]:
-        generation = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
+        generation = (
+            datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
+        )
         backup_root = target / "backups" / generation
         ensure_private_directory(backup_root)
         for relative in before["drift"]:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import unittest
@@ -14,9 +13,15 @@ from ai_orchestrator.config import (
     load_roles,
     validate_configuration,
 )
-from ai_orchestrator.models import NATIVE_WRITER_PROFILES, ContractError, TaskSpec
-from ai_orchestrator.routing import select_route
-
+from ai_orchestrator.models import (
+    NATIVE_WRITER_PROFILES,
+    ContractError,
+    ModelConfig,
+    Profile,
+    RoleConfig,
+    TaskSpec,
+)
+from ai_orchestrator.routing import plan_route, select_route
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,7 +32,9 @@ class ContractsAndRoutingTests(unittest.TestCase):
         os.environ["AI_ORCHESTRATOR_CONFIG"] = str(ROOT / "config")
         self.temp = tempfile.TemporaryDirectory()
         self.repo = Path(self.temp.name)
-        (self.repo / "prompt.txt").write_text("Implement the bounded change", encoding="utf-8")
+        (self.repo / "prompt.txt").write_text(
+            "Implement the bounded change", encoding="utf-8"
+        )
         (self.repo / "tests").mkdir()
         (self.repo / "tests" / "test_example.py").write_text("pass\n", encoding="utf-8")
 
@@ -55,17 +62,28 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertTrue(report["ok"], report)
         models = load_models()
         self.assertTrue(
-            all(model.official for model in models.values() if model.trust_tier == "official_subscription")
+            all(
+                model.official
+                for model in models.values()
+                if model.trust_tier == "official_subscription"
+            )
         )
         self.assertTrue(
-            all(model.max_sensitivity == "public" for model in models.values() if model.trust_tier == "web_free")
+            all(
+                model.max_sensitivity == "public"
+                for model in models.values()
+                if model.trust_tier == "web_free"
+            )
         )
         self.assertEqual("available", models["gemini-free-fast"].status)
-        self.assertTrue(all(
-            model.status == "candidate"
-            for model in models.values()
-            if model.trust_tier != "official_subscription" and model.id != "gemini-free-fast"
-        ))
+        self.assertTrue(
+            all(
+                model.status == "candidate"
+                for model in models.values()
+                if model.trust_tier != "official_subscription"
+                and model.id != "gemini-free-fast"
+            )
+        )
 
     def test_tests_route_to_guarded_deepseek_writer_without_fallback(self) -> None:
         decision = select_route(
@@ -239,7 +257,9 @@ class ContractsAndRoutingTests(unittest.TestCase):
 
     def test_protected_algoritmic_input_uses_native_model(self) -> None:
         (self.repo / "configs").mkdir()
-        (self.repo / "configs" / "risk.yml").write_text("live: false\n", encoding="utf-8")
+        (self.repo / "configs" / "risk.yml").write_text(
+            "live: false\n", encoding="utf-8"
+        )
         task = self.task(input_paths=["configs/risk.yml"])
         profile = replace(load_profile("algoritmic"), repo_root=str(self.repo))
         decision = select_route(task, load_models(), load_roles(), profile)
@@ -292,6 +312,7 @@ class ContractsAndRoutingTests(unittest.TestCase):
             models,
             load_roles(),
             load_profile("default"),
+            pin="kimi-official",
         )
         self.assertEqual("kimi-official", decision.selected_model)
         self.assertEqual("kimi_cli", decision.transport)
@@ -314,6 +335,72 @@ class ContractsAndRoutingTests(unittest.TestCase):
         )
         self.assertEqual("NO_ROUTE", decision.status)
         self.assertIn("repo_root", decision.reason)
+
+    def test_real_route_matches_the_scored_route_plan(self) -> None:
+        task = self.task(input_paths=[])
+        models = {
+            "first": ModelConfig(
+                "first",
+                "family-a",
+                "provider-a",
+                "codex_cli",
+                "first",
+                True,
+                "available",
+                ("tests",),
+                "internal",
+                1,
+                quality_score=0.10,
+            ),
+            "best": ModelConfig(
+                "best",
+                "family-b",
+                "provider-b",
+                "codex_cli",
+                "best",
+                True,
+                "available",
+                ("tests",),
+                "internal",
+                1,
+                quality_score=0.95,
+            ),
+        }
+        roles = {"tests": RoleConfig("tests", ("first", "best"), ())}
+        profile = Profile(
+            "test",
+            None,
+            ("internal",),
+            ("first", "best"),
+            (),
+            (),
+            (),
+            "direct",
+        )
+
+        plan = plan_route(task, models, roles, profile)
+        decision = select_route(task, models, roles, profile)
+
+        self.assertEqual("best", plan.selected_model)
+        self.assertEqual(plan.selected_model, decision.selected_model)
+        self.assertIn("score=", decision.reason)
+
+    def test_directory_context_hash_tracks_content_and_tree_changes(self) -> None:
+        source = self.repo / "src"
+        source.mkdir()
+        first = source / "first.py"
+        first.write_text("VALUE = 1\n", encoding="utf-8")
+        task = self.task(input_paths=["src"])
+
+        original = task.context_sha256()
+        first.write_text("VALUE = 2\n", encoding="utf-8")
+        modified = task.context_sha256()
+        first.rename(source / "renamed.py")
+        renamed = task.context_sha256()
+        (source / "renamed.py").unlink()
+        deleted = task.context_sha256()
+
+        self.assertEqual(4, len({original, modified, renamed, deleted}))
 
 
 if __name__ == "__main__":

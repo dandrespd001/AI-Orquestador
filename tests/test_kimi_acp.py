@@ -9,8 +9,7 @@ from pathlib import Path
 
 from ai_orchestrator.kimi_acp import run_kimi_acp
 
-
-FAKE_AGENT = r'''
+FAKE_AGENT = r"""
 import json, sys
 
 def send(value):
@@ -33,7 +32,7 @@ for line in sys.stdin:
         if "result" in response:
             send({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done"}}}})
         send({"jsonrpc":"2.0","id":request["id"],"result":{"stopReason":"end_turn"}})
-'''
+"""
 
 
 class KimiAcpTests(unittest.TestCase):

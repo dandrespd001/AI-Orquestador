@@ -10,6 +10,7 @@ allowed_models = [
   "claude-sonnet",
   "deepseek-v4-flash",
   "MiniMax-M3",
+  "fx-glm-5.2-promo",
 ]
 deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web", "moonshot"]
 protected_path_prefixes = [
@@ -39,3 +40,7 @@ deterministic_gates = [
 minimax_mode = "delegate-minimax-api"
 preserve_live_trading_false = true
 public_repository = false
+allow_paid_routes = false
+max_marginal_cost_usd = 0.0
+capability_packages = ["systems"]
+extensions = []

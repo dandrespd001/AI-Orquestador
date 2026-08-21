@@ -23,7 +23,6 @@ import time
 import tomllib
 from pathlib import Path
 
-
 SOURCE = Path(__file__).resolve().parents[1]
 STATE_ROOT = Path.home() / ".local" / "share" / "ai-orchestrator"
 MODELS_TOML = SOURCE / "config" / "models.toml"
@@ -57,10 +56,15 @@ def read_canaries() -> list[dict]:
                 "attempts": payload.get("attempts"),
                 "passed": payload.get("passed"),
                 "promotion_ready": payload.get("promotion_ready"),
-                "statuses": sorted({a.get("status") for a in attempts if a.get("status")}),
+                "statuses": sorted(
+                    {a.get("status") for a in attempts if a.get("status")}
+                ),
                 "provenance_verified": sorted(
-                    {a.get("provenance_verified") for a in attempts
-                     if a.get("provenance_verified") is not None}
+                    {
+                        a.get("provenance_verified")
+                        for a in attempts
+                        if a.get("provenance_verified") is not None
+                    }
                 ),
                 "receipt_predates_current_code": bool(
                     attempts and not (CURRENT_ATTEMPT_FIELDS & seen_fields)
@@ -108,15 +112,16 @@ def build() -> dict:
             # exit_code and error_code. A row without them was produced by older
             # code, so the promotion it supports was never re-measured.
             "note": "receipts lacking exit_code/error_code predate the current "
-                    "writer_canary.py; re-run the canaries to refresh them",
+            "writer_canary.py; re-run the canaries to refresh them",
         },
         "promotion_rule": {
             "min_attempts": PROMOTION_MIN_ATTEMPTS,
             "required": "all attempts pass; promotion_ready is advisory and "
-                        "does not change models.toml, which is edited by hand",
+            "does not change models.toml, which is edited by hand",
         },
         "models_without_canary": sorted(
-            model_id for model_id, entry in models.items()
+            model_id
+            for model_id, entry in models.items()
             if entry.get("execution_profile") != "native_writer"
             and model_id not in {c["model"] for c in canaries}
         ),
