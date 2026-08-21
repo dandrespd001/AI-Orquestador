@@ -8,3 +8,23 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+
+# Local credentials and private key material. Keep publishable templates tracked.
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+credentials.json
+secrets.json
+*.credentials.json
+*.secrets.json
