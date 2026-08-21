@@ -183,8 +183,14 @@ class AdapterTests(unittest.TestCase):
         )
         self.assertEqual("PROVIDER_ERROR", _qwen_error(stdout, b""))
 
+    @patch(
+        "ai_orchestrator.adapters.shutil.which",
+        side_effect=lambda executable: f"/usr/bin/{executable}",
+    )
     @patch("ai_orchestrator.adapters.run_supervised")
-    def test_qwen_success_requires_valid_result_and_provenance(self, run) -> None:
+    def test_qwen_success_requires_valid_result_and_provenance(
+        self, run, _which
+    ) -> None:
         run.return_value = ProcessOutcome(
             0,
             b'[{"type":"system","model":"ds/deepseek-v4-flash"},'
