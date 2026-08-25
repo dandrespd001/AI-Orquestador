@@ -14,6 +14,10 @@ max_concurrency = 2
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 1050000
+# Preferencia del operador, no una medicion: arquitectura, C++ acotado y determinismo, con escritura nativa.
+quality_score = 0.9
 
 [[models]]
 id = "gpt-5.6-terra"
@@ -29,6 +33,10 @@ max_concurrency = 2
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 1050000
+# Preferencia del operador, no una medicion: estadistica y seguridad.
+quality_score = 0.86
 
 [[models]]
 id = "gpt-5.6-luna"
@@ -44,6 +52,10 @@ max_concurrency = 1
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 1050000
+# Preferencia del operador, no una medicion: interfaz de Godot.
+quality_score = 0.82
 
 [[models]]
 id = "claude-opus"
@@ -59,6 +71,10 @@ max_concurrency = 1
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
+# Ventana real, referencia oficial de la API de Anthropic.
+context_window = 1000000
+# Preferencia del operador, no una medicion: arquitectura, seguridad y determinismo.
+quality_score = 0.9
 
 [[models]]
 id = "claude-sonnet"
@@ -74,6 +90,10 @@ max_concurrency = 2
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
+# Ventana real, referencia oficial de la API de Anthropic.
+context_window = 1000000
+# Preferencia del operador, no una medicion: implementacion y documentacion con escritura nativa.
+quality_score = 0.85
 
 [[models]]
 # Sondeado vivo el 2026-08-14: ds/deepseek-v4-pro responde en 2043 ms.
@@ -98,6 +118,13 @@ capabilities = ["read", "write", "tools"]
 # revisa el Arquitecto. Unico modelo de transporte Qwen con este perfil: los
 # demas siguen entregando parche hasta que su propio canario los justifique.
 execution_profile = "native_patch_writer"
+# Ventana real, gateway OmniRoute y config de Qwen.
+context_window = 1000000
+# El proveedor deepseek es el unico que declara la capacidad
+# "cache" en providers.toml.
+cache_supported = true
+# Preferencia del operador, no una medicion: por debajo de flash por decision explicita del Director.
+quality_score = 0.8
 
 [[models]]
 id = "deepseek-v4-flash"
@@ -122,6 +149,13 @@ capabilities = ["read", "write", "tools"]
 # listaba Flash primero, y por patch_api_writer habria ido a la ruta HTTP que
 # agoto el presupuesto de razonamiento en todos los encargos reales del 08-14.
 execution_profile = "native_patch_writer"
+# Ventana real, gateway OmniRoute y config de Qwen.
+context_window = 1000000
+# El proveedor deepseek es el unico que declara la capacidad
+# "cache" en providers.toml.
+cache_supported = true
+# Preferencia del operador, no una medicion: caballo de batalla del Director: tests, docs, boilerplate y C++ acotado, con cache.
+quality_score = 0.89
 
 [[models]]
 id = "MiniMax-M3"
@@ -141,6 +175,10 @@ max_concurrency = 1
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "patch_api_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 1048576
+# Preferencia del operador, no una medicion: contexto largo y refactor masivo: 1M de ventana, capacidad long_context declarada.
+quality_score = 0.91
 
 [[models]]
 id = "kimi-official"
@@ -165,6 +203,11 @@ execution_profile = "kimi_acp_writer"
 # primera clase para inventario y para `orchestrator_delegate_abacus`, pero no
 # aparecen en roles.toml ni en perfiles: el enrutador core no puede seleccionarlos
 # por accidente ni tratarlos como escritores con acceso al repositorio.
+# Ventana real, gateway OmniRoute, cinco hosts coinciden en kimi-k3.
+context_window = 1048576
+# Preferencia del operador, no una medicion: investigacion y agente de implementacion: K3 con 1M de ventana.
+quality_score = 0.91
+
 [[models]]
 id = "abacus-grok-4.6"
 family = "xai-grok"
@@ -182,6 +225,8 @@ execution_profile = "read_only"
 quality_score = 0.92
 included_quota = true
 marginal_cost_per_million = 0.0
+# Ventana real, openrouter; Abacus no publica su limite propio.
+context_window = 500000
 
 [[models]]
 id = "abacus-qwen3.8-max"
@@ -200,6 +245,8 @@ execution_profile = "read_only"
 quality_score = 0.92
 included_quota = true
 marginal_cost_per_million = 0.0
+# Ventana real, openrouter; Abacus no publica su limite propio.
+context_window = 1000000
 
 [[models]]
 id = "abacus-qwen3.8-27b"
@@ -218,6 +265,8 @@ execution_profile = "read_only"
 quality_score = 0.51
 included_quota = true
 marginal_cost_per_million = 0.0
+# Ventana real, openrouter; Abacus no publica su limite propio.
+context_window = 1000000
 
 [[models]]
 id = "abacus-glm-5.3"
@@ -242,6 +291,9 @@ marginal_cost_per_million = 0.0
 # del 2026-09-02; se corta un día antes para que nunca pase a pago por desfase
 # horario o cambio de condiciones. Sólo lectura: los parches siguen usando los
 # writers aislados ya promovidos.
+# Ventana real, openrouter; Abacus no publica su limite propio.
+context_window = 1048576
+
 [[models]]
 id = "fx-glm-5.2-promo"
 family = "zai-glm"
@@ -265,6 +317,9 @@ available_until = "2026-09-01"
 # Public/local candidates are intentionally not routable until a five-run
 # writer canary produces promotion_ready=true. Their fixed route IDs come from
 # the live OmniRoute catalog; no auto/* combo is used, so provenance is exact.
+# No consume cuota de ninguna suscripcion.
+cost_tier = "free"
+
 [[models]]
 id = "local-qwen36-agent"
 family = "qwen"
@@ -279,6 +334,12 @@ max_concurrency = 1
 trust_tier = "local"
 capabilities = ["read", "write", "tools"]
 execution_profile = "patch_api_writer"
+# Ventana real, gateway OmniRoute y config de Qwen.
+context_window = 16384
+# Preferencia del operador, no una medicion: sin canario valido: 1 intento de los 5 que exige la regla.
+quality_score = 0.55
+# No consume cuota de ninguna suscripcion.
+cost_tier = "free"
 
 [[models]]
 id = "gemini-free-fast"
@@ -296,6 +357,12 @@ max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]
 execution_profile = "patch_api_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 1048576
+# Preferencia del operador, no una medicion: ruta gratuita verificada 5 de 5 en canario de escritura.
+quality_score = 0.88
+# No consume cuota de ninguna suscripcion.
+cost_tier = "free"
 
 [[models]]
 id = "qwen-web-max"
@@ -311,6 +378,12 @@ max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]
 execution_profile = "patch_api_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 1000000
+# Preferencia del operador, no una medicion: sin canario valido: 1 intento de los 5 que exige la regla.
+quality_score = 0.55
+# No consume cuota de ninguna suscripcion.
+cost_tier = "free"
 
 [[models]]
 id = "kimi-free-code"
@@ -326,6 +399,12 @@ max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]
 execution_profile = "patch_api_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 128000
+# Preferencia del operador, no una medicion: sin canario valido: 1 intento de los 5 que exige la regla.
+quality_score = 0.55
+# No consume cuota de ninguna suscripcion.
+cost_tier = "free"
 
 [[models]]
 id = "kat-coder-free"
@@ -341,3 +420,10 @@ max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]
 execution_profile = "patch_api_writer"
+# Ventana real, gateway OmniRoute.
+context_window = 128000
+# Preferencia del operador, no una medicion: sin canario valido: 1 intento de los 5 que exige la regla.
+quality_score = 0.55
+# No consume cuota de ninguna suscripcion.
+cost_tier = "free"
+

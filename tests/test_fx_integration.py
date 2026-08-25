@@ -58,7 +58,13 @@ class FxIntegrationTests(unittest.TestCase):
         models = load_models(ROOT / "config")
         roles = load_roles(ROOT / "config")
         profile = replace(load_profile("default", ROOT / "config"), repo_root=None)
-        decision = select_route(self.task(), models, roles, profile)
+        # Anclado a proposito: lo que este test protege es que la ruta de FX
+        # sea de solo lectura y caduque sin caer en una de pago, no que FX
+        # encabece el rol. Desde que el scorer lee la tasa de exito medida, FX
+        # cae por su 0 de 7 y el rol lo gana otro modelo.
+        decision = select_route(
+            self.task(), models, roles, profile, pin="fx-glm-5.2-promo"
+        )
         self.assertEqual("fx-glm-5.2-promo", decision.selected_model)
         self.assertFalse(decision.fallback_allowed)
 

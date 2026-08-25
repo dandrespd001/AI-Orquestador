@@ -3,79 +3,154 @@ schema_version = 1
 # Cada rol fija el presupuesto de razonamiento que los adaptadores nativos
 # reciben por argv. Los writers externos ignoran el nivel, pero conservan el
 # mismo orden de selección y siempre pasan por worktree + gates.
+#
+# Criterio de composición, fijado por el Director el 2026-08-25: cada modelo
+# encabeza los roles donde es mejor, con sesgo explícito hacia las
+# suscripciones que estaban infrautilizadas (Kimi, MiniMax, Abacus, DeepSeek).
+#
+# Dos reglas hacen que esto funcione sin listas separadas por modo:
+#   - Los modelos de Abacus y FX declaran capabilities = ["read"], así que
+#     routing.py:217 los descarta solo en cualquier tarea de escritura. Van
+#     primeros en los roles de análisis: ganan la lectura, ceden la escritura.
+#   - quality_score domina la puntuación (peso 0.34) frente al orden de lista
+#     (peso 0.02). Un modelo que no debe encabezar un rol se omite de `models`
+#     y se conserva en `reviewers`; dejarlo en la lista lo haría ganar.
 
+# Análisis de diseño: Grok gana la lectura; los escritores nativos toman la
+# tarea en cuanto pide patch.
 [roles.architecture]
-models = ["claude-opus", "gpt-5.6-sol"]
+models = ["abacus-grok-4.6", "claude-opus", "gpt-5.6-sol"]
 reviewers = ["gpt-5.6-sol", "claude-opus"]
 reasoning_effort = "xhigh"
 reviewer_reasoning_effort = "xhigh"
 
+# Terra encabeza: es su especialidad declarada. Opus queda de revisor, no en
+# `models`, porque su 0.90 le haría ganar el rol.
 [roles.statistics]
-models = ["gpt-5.6-terra", "gpt-5.6-sol", "claude-opus"]
+models = ["gpt-5.6-terra", "deepseek-v4-pro"]
 reviewers = ["claude-opus", "gpt-5.6-sol"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
 
+# Auditoría de seguridad: Grok la lee, Opus la escribe.
 [roles.security]
-models = ["claude-opus", "gpt-5.6-sol", "gpt-5.6-terra"]
+models = ["abacus-grok-4.6", "claude-opus", "gpt-5.6-terra"]
 reviewers = ["gpt-5.6-sol", "claude-opus"]
 reasoning_effort = "xhigh"
 reviewer_reasoning_effort = "xhigh"
 
+# Kimi encabeza la escritura y Qwen3.8 Max el análisis previo. Sol va al
+# final: no encabeza el rol, pero es el escritor nativo que exigen las rutas
+# protegidas, y sin él claude-sonnet era el único camino para esas entradas.
 [roles.implementation]
-models = ["gpt-5.6-sol", "claude-sonnet", "gpt-5.6-terra", "deepseek-v4-flash"]
+models = [
+    "abacus-qwen3.8-max",
+    "kimi-official",
+    "deepseek-v4-flash",
+    "claude-sonnet",
+    "gpt-5.6-sol",
+]
 reviewers = ["claude-opus", "gpt-5.6-terra"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
 
+# La ruta gratuita verificada va primera: en repo público gana y conserva
+# cuota de suscripción; en repo privado la puerta web_free la descarta sola y
+# el rol cae en DeepSeek Flash, el caballo de batalla que pidió el Director.
 [roles.tests]
-models = ["gemini-free-fast", "qwen-web-max", "kat-coder-free", "deepseek-v4-flash", "gpt-5.6-sol", "claude-sonnet"]
+models = [
+    "abacus-qwen3.8-max",
+    "gemini-free-fast",
+    "deepseek-v4-flash",
+    "claude-sonnet",
+    "gpt-5.6-sol",
+]
 reviewers = ["gpt-5.6-sol", "claude-opus"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
 
+# Carril barato, con la ruta gratuita primero por el mismo motivo que tests.
+# MiniMax se omite a propósito: rinde más en contexto largo y refactor masivo,
+# y su 0.91 se llevaría también este rol.
 [roles.boilerplate]
-models = ["gemini-free-fast", "qwen-web-max", "kat-coder-free", "MiniMax-M3", "deepseek-v4-flash", "gpt-5.6-luna"]
+models = ["gemini-free-fast", "deepseek-v4-flash", "gpt-5.6-luna"]
 reviewers = ["gpt-5.6-sol", "claude-sonnet"]
 reasoning_effort = "medium"
 reviewer_reasoning_effort = "high"
 
+# La especialidad de MiniMax: 1.048.576 de ventana y capacidad long_context
+# declarada por el proveedor.
 [roles.long_context]
-models = ["MiniMax-M3", "kimi-official", "claude-opus", "claude-sonnet"]
+models = [
+    "MiniMax-M3",
+    "abacus-qwen3.8-max",
+    "kimi-official",
+    "claude-opus",
+]
 reviewers = ["gpt-5.6-sol", "claude-opus"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
 
+# Kimi encabeza. Grok se omite de `models` pese a declarar research: su 0.92
+# ganaría siempre la lectura y dejaría a Kimi sin uso otra vez.
 [roles.research]
-models = ["kimi-official", "fx-glm-5.2-promo", "kimi-free-code", "qwen-web-max", "gemini-free-fast", "claude-sonnet", "claude-opus"]
+models = [
+    "kimi-official",
+    "fx-glm-5.2-promo",
+    "gemini-free-fast",
+    "claude-sonnet",
+]
 reviewers = ["gpt-5.6-terra", "claude-opus"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
 
+# MiniMax encabeza documentación: volumen alto y contexto amplio.
 [roles.docs]
-models = ["fx-glm-5.2-promo", "gemini-free-fast", "qwen-web-max", "MiniMax-M3", "deepseek-v4-flash", "claude-sonnet", "gpt-5.6-sol"]
+models = [
+    "MiniMax-M3",
+    "deepseek-v4-flash",
+    "fx-glm-5.2-promo",
+    "gemini-free-fast",
+    "claude-sonnet",
+]
 reviewers = ["gpt-5.6-sol", "claude-sonnet"]
 reasoning_effort = "medium"
 reviewer_reasoning_effort = "high"
 
 [roles.bulk_refactor]
-models = ["MiniMax-M3", "gpt-5.6-sol", "claude-sonnet", "gpt-5.6-terra"]
+models = [
+    "abacus-qwen3.8-max",
+    "MiniMax-M3",
+    "gpt-5.6-sol",
+    "claude-sonnet",
+]
 reviewers = ["claude-opus", "gpt-5.6-sol"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "xhigh"
 
+# Revisión: es exactamente el trabajo de un modelo de solo lectura, y donde
+# la suscripción de Abacus rinde sin fricción.
 [roles.review]
-models = ["fx-glm-5.2-promo", "gpt-5.6-terra", "claude-opus", "deepseek-v4-pro", "gpt-5.6-sol", "claude-sonnet"]
+models = [
+    "abacus-grok-4.6",
+    "fx-glm-5.2-promo",
+    "gpt-5.6-terra",
+    "deepseek-v4-pro",
+    "claude-opus",
+]
 reviewers = ["claude-opus", "gpt-5.6-sol"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "xhigh"
 
+# C++ acotado: Flash por delante de Pro, por decisión del Director. Sol sale
+# de `models` para no arrebatarle el rol por 0.01.
 [roles.bounded_cpp]
-models = ["deepseek-v4-flash", "deepseek-v4-pro", "gpt-5.6-sol", "claude-sonnet"]
+models = ["deepseek-v4-flash", "deepseek-v4-pro", "claude-sonnet"]
 reviewers = ["gpt-5.6-sol", "claude-opus"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "xhigh"
 
+# Determinismo se queda con los escritores nativos: es donde el golden manda.
 [roles.determinism]
 models = ["gpt-5.6-sol", "claude-opus"]
 reviewers = ["claude-opus", "gpt-5.6-terra"]

@@ -293,16 +293,21 @@ class ContractsAndRoutingTests(unittest.TestCase):
         # pierde por orden.
         self.assertNotIn("kimi-official", decision.unavailable)
 
-    def test_algoritmic_minimax_is_a_supervised_handoff_when_available(self) -> None:
+    def test_algoritmic_minimax_runs_direct_since_the_handoff_was_lifted(self) -> None:
+        # 2026-08-25: el Director levanto el handoff obligatorio. Antes,
+        # minimax_mode = "delegate-minimax-api" forzaba HANDOFF_REQUIRED en
+        # cualquier ruta a MiniMax dentro de algoritmic, asi que el modelo no
+        # llegaba a ejecutar nunca en ese repositorio. Lo que sigue protegido
+        # es que el transporte sea el CLI real y que las puertas normales de
+        # sensibilidad y rutas protegidas sigan aplicando.
         models = load_models()
         models["MiniMax-M3"] = replace(models["MiniMax-M3"], status="available")
         task = self.task(task_type="long_context", input_paths=[])
         profile = replace(load_profile("algoritmic"), repo_root=str(self.repo))
         decision = select_route(task, models, load_roles(), profile)
         self.assertEqual("MiniMax-M3", decision.selected_model)
-        self.assertEqual("delegate-minimax-api", decision.transport)
-        self.assertFalse(decision.auto_execute)
-        self.assertEqual("HANDOFF_REQUIRED", decision.status)
+        self.assertEqual("qwen_minimax_cli", decision.transport)
+        self.assertNotEqual("delegate-minimax-api", decision.transport)
 
     def test_kimi_uses_supervised_acp_when_quota_returns(self) -> None:
         models = load_models()

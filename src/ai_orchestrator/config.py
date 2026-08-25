@@ -89,6 +89,7 @@ def load_models(root: Path | None = None) -> dict[str, ModelConfig]:
             included_quota=bool(raw.get("included_quota", True)),
             marginal_cost_per_million=float(raw.get("marginal_cost_per_million", 0.0)),
             context_window=int(raw.get("context_window", 120_000)),
+            cost_tier=str(raw.get("cost_tier", "included")),
             cache_supported=bool(raw.get("cache_supported", False)),
             observed_latency_ms=(
                 int(raw["observed_latency_ms"])

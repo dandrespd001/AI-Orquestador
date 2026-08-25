@@ -3,16 +3,20 @@ name = "algoritmic"
 repo_root = "/home/adquiod/Documentos/Algoritmic-IA"
 auto_execute_sensitivities = ["public", "internal"]
 allowed_models = [
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-5.6-luna",
-  "claude-opus",
-  "claude-sonnet",
-  "deepseek-v4-flash",
-  "MiniMax-M3",
-  "fx-glm-5.2-promo",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "claude-opus",
+    "claude-sonnet",
+    "deepseek-v4-flash",
+    "MiniMax-M3",
+    "fx-glm-5.2-promo",
+    "kimi-official",
+    "deepseek-v4-pro",
+    "abacus-grok-4.6",
+    "abacus-qwen3.8-max",
 ]
-deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web", "moonshot"]
+deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web"]
 protected_path_prefixes = [
   ".env",
   ".git",
@@ -37,7 +41,10 @@ deterministic_gates = [
   "./scripts/verify-release-minimal.sh",
   "python3 scripts/verify-safety-patterns.py --mode live",
 ]
-minimax_mode = "delegate-minimax-api"
+# El Director levanto el handoff obligatorio el 2026-08-25: MiniMax
+# queda sujeto solo a las puertas normales de sensibilidad y rutas
+# protegidas, como en los demas perfiles.
+minimax_mode = "direct"
 preserve_live_trading_false = true
 public_repository = false
 allow_paid_routes = false

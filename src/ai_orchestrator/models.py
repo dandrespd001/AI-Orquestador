@@ -307,6 +307,11 @@ class ModelConfig:
     cache_supported: bool = False
     observed_latency_ms: int | None = None
     available_until: str | None = None
+    # Que la ruta consuma o no cuota es independiente de si el proveedor es
+    # oficial: "free" no gasta nada, "included" gasta cuota de suscripcion,
+    # "paid" cobra por uso. Separarlo de trust_tier permite preferir lo
+    # gratuito sin bajar el liston de confianza.
+    cost_tier: str = "included"
 
 
 @dataclass(frozen=True)

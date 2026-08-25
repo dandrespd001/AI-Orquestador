@@ -18,12 +18,29 @@ NATIVE_TRANSPORTS = {"codex_cli", "claude_cli"}
 HANDOFF_SENSITIVITIES = {"confidential", "secrets", "financial_control", "deployment"}
 
 
+# A handful of runs is not a measurement. Below this many samples the observed
+# latency and success rate are ignored and the neutral prior is used instead:
+# one lucky or unlucky run must not decide which provider a role goes to.
+MIN_OBSERVATION_SAMPLES = 3
+
+# Una ruta gratuita elegible se prefiere a una que gasta cuota, y cualquiera
+# de las dos a una de pago.
+COST_TIER_SCORES = {"free": 1.0, "included": 0.5, "paid": 0.0}
+
+
 def _bounded_score(value: object, default: float) -> float:
     try:
         result = float(value)
     except (TypeError, ValueError):
         return default
     return max(0.0, min(1.0, result))
+
+
+def _has_enough_samples(observed: dict[str, object]) -> bool:
+    try:
+        return int(observed.get("sample_count", 0)) >= MIN_OBSERVATION_SAMPLES
+    except (TypeError, ValueError):
+        return False
 
 
 def score_route_candidate(
@@ -37,6 +54,7 @@ def score_route_candidate(
     """Score an already-policy-eligible model on quality, quota and efficiency."""
 
     observed = observation or {}
+    trusted = _has_enough_samples(observed)
     quality = _bounded_score(
         observed.get("quality", model.quality_score), model.quality_score
     )
@@ -53,24 +71,43 @@ def score_route_candidate(
     cost = 1.0 / (1.0 + marginal_cost * 10.0)
     context_window = max(1, int(observed.get("context_window", model.context_window)))
     context = min(1.0, context_window / max(1, task.max_context_tokens))
-    cache = _bounded_score(
-        observed.get("cache_hit_rate", 1.0 if model.cache_supported else 0.0),
-        1.0 if model.cache_supported else 0.0,
+    # Declarar la capacidad no es haberla medido: sin muestras suficientes el
+    # prior vale la mitad que un cache_hit_rate real, igual que la latencia.
+    cache_prior = 0.5 if model.cache_supported else 0.0
+    cache = (
+        _bounded_score(observed.get("cache_hit_rate", cache_prior), cache_prior)
+        if trusted
+        else cache_prior
     )
-    latency_ms = observed.get("latency_ms", model.observed_latency_ms)
+    latency_ms = (
+        observed.get("latency_ms", model.observed_latency_ms)
+        if trusted
+        else model.observed_latency_ms
+    )
     latency = (
         0.5
         if latency_ms is None
         else 1.0 / (1.0 + max(0.0, float(latency_ms)) / 10_000.0)
     )
+    # Measured reliability. Without it the scorer rewards a model for failing
+    # quickly: a fast error looks exactly like a fast answer to the latency
+    # term. Kept at the neutral prior until there are enough samples, so a
+    # model that has never run is not punished for the absence of evidence.
+    success = _bounded_score(observed.get("success_rate", 1.0), 1.0) if trusted else 1.0
     # Role order is an explicit operator preference and a deterministic tie
     # breaker, but it cannot outweigh measured quality/quota/cost.
+    # Preferir lo gratuito cuando ya ha pasado todas las puertas de politica:
+    # una ruta gratuita elegible conserva cuota de suscripcion para el trabajo
+    # que no puede ir por ahi.
+    cost_tier = COST_TIER_SCORES.get(model.cost_tier, 0.5)
     priority = (role_size - role_priority) / max(1, role_size)
     return round(
-        quality * 0.42
-        + quota * 0.20
-        + cost * 0.16
+        quality * 0.34
+        + quota * 0.18
+        + cost * 0.12
         + context * 0.10
+        + success * 0.08
+        + cost_tier * 0.06
         + cache * 0.05
         + latency * 0.05
         + priority * 0.02,
