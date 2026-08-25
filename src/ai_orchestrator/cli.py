@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 import shutil
 import sys
 import urllib.error
@@ -11,18 +12,21 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from ai_orchestrator.abacus_canary import run_abacus_workflow_canaries
 from ai_orchestrator.adapters import AdapterError, execute
 from ai_orchestrator.admission import AdmissionController
 from ai_orchestrator.api import HumanActionGate, serve_panel
 from ai_orchestrator.archive import ArchiveError, create_encrypted_archive
+from ai_orchestrator.artifacts import ArtifactStore
 from ai_orchestrator.benchmark import (
     atomic_private_json,
     run_gateway_benchmark,
     select_gateway,
 )
-from ai_orchestrator.broker import UnixBrokerServer, default_socket_path
+from ai_orchestrator.broker import UnixBrokerServer, broker_request, default_socket_path
 from ai_orchestrator.canary import ROUTES, run_official_canaries
 from ai_orchestrator.capabilities import select_capability_package
+from ai_orchestrator.claude_gateway import ClaudeGatewayHook
 from ai_orchestrator.client_catalog import generate_client_config, write_client_config
 from ai_orchestrator.config import (
     config_root,
@@ -41,7 +45,6 @@ from ai_orchestrator.control_plane import ControlPlane
 from ai_orchestrator.credentials import (
     CredentialStore,
     authentication_inventory,
-    minimax_runtime_key,
     omniroute_runtime_key,
 )
 from ai_orchestrator.evals import run_routing_eval
@@ -51,6 +54,7 @@ from ai_orchestrator.mcp_tools import serve_stdio
 from ai_orchestrator.models import ContractError, TaskSpec
 from ai_orchestrator.optimization import prompt_optimization_preflight
 from ai_orchestrator.quality import promptfoo_preflight, run_quality_eval
+from ai_orchestrator.readiness import evaluate_doctor
 from ai_orchestrator.routing import plan_route, select_route
 from ai_orchestrator.sessions import SessionStore
 from ai_orchestrator.storage import (
@@ -65,6 +69,7 @@ from ai_orchestrator.storage import (
 )
 from ai_orchestrator.telemetry import TelemetryStore
 from ai_orchestrator.updates import UpdateRegistry, load_component_pins
+from ai_orchestrator.workflows import WorkflowRunner
 from ai_orchestrator.writer_canary import run_writer_canaries
 
 EXIT_POLICY = 4
@@ -112,48 +117,177 @@ def _local_health() -> dict[str, object]:
         return {"reachable": False, "status": None}
 
 
-def command_doctor(args: argparse.Namespace) -> int:
-    configuration = validate_configuration(args.profile)
-    commands = {
-        name: shutil.which(name)
-        for name in (
-            "codex",
-            "claude",
-            "qwen",
-            "kimi",
-            "omniroute",
-            "bwrap",
-            "git",
-            "gpg",
-            "zstd",
-            "tar",
-            "systemd-creds",
+def _mcp_status(profile_name: str) -> dict[str, object]:
+    profile = load_profile(profile_name)
+    if not profile.repo_root:
+        return {"configured": False, "path": None, "reason": "profile_has_no_repo"}
+    source = Path(profile.repo_root) / ".mcp.json"
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        server = payload["mcpServers"]["ai-orchestrator"]
+        configured = (
+            not source.is_symlink()
+            and server.get("command") == "ai-orchestrator"
+            and server.get("args") == ["mcp-serve", "--profile", profile_name]
         )
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        configured = False
+    return {"configured": configured, "path": str(source)}
+
+
+def _broker_status(profile_name: str) -> dict[str, object]:
+    path = default_socket_path()
+    try:
+        response = broker_request("diagnostics", {"profile": profile_name}, path=path)
+        reachable = response.get("ok") is True
+    except (OSError, TimeoutError, ConnectionError, ContractError):
+        reachable = False
+    return {
+        "reachable": reachable,
+        "socket": str(path),
+        "direct_fallback_available": True,
     }
+
+
+def build_doctor_report(profile_name: str, *, check: str) -> dict[str, object]:
+    configuration = validate_configuration(profile_name)
+    profile = load_profile(profile_name)
+    models = load_models()
+    allowed = [
+        models[model_id]
+        for model_id in profile.allowed_models
+        if model_id in models and models[model_id].status == "available"
+    ]
+    command_by_transport = {
+        "codex_cli": "codex",
+        "claude_cli": "claude",
+        "qwen_omniroute_cli": "qwen",
+        "qwen_minimax_cli": "qwen",
+        "kimi_cli": "kimi",
+        "abacus_cli": "abacusai",
+        "fx_cli": "fx",
+    }
+    command_names = {"git", "bwrap"}
+    command_names.update(
+        command_by_transport[model.transport]
+        for model in allowed
+        if model.transport in command_by_transport
+    )
+    commands = {name: shutil.which(name) for name in sorted(command_names)}
     storage = audit_storage()
     sync = config_sync_status(canonical_config_root(), config_root())
-    credentials = {
-        "minimax": minimax_runtime_key() is not None,
-        "omniroute": omniroute_runtime_key() is not None,
-    }
-    payload = {
-        "schema_version": 1,
-        "ok": (
-            configuration["ok"]
-            and all(commands.values())
-            and storage["ok"]
-            and sync["in_sync"]
-            and all(credentials.values())
-        ),
-        "configuration": configuration,
-        "commands": commands,
-        "omniroute": _local_health(),
-        "credentials": credentials,
-        "config_sync": sync,
-        "storage": storage,
-    }
+    required_auth = {"openai", "anthropic", "moonshot", "abacus", "omniroute"}
+    authentication = [
+        row
+        for row in authentication_inventory(profile=profile_name)
+        if row.get("provider") in required_auth
+    ]
+    omniroute = _local_health()
+    omniroute["configured"] = omniroute_runtime_key() is not None
+    return evaluate_doctor(
+        check=check,
+        configuration=configuration,
+        commands=commands,
+        mcp=_mcp_status(profile_name),
+        broker=_broker_status(profile_name),
+        authentication=authentication,
+        omniroute=omniroute,
+        config_sync=sync,
+        storage=storage,
+    )
+
+
+def command_doctor(args: argparse.Namespace) -> int:
+    payload = build_doctor_report(args.profile, check=args.check)
     _print(payload)
     return 0 if payload["ok"] else EXIT_POLICY
+
+
+def command_submit(args: argparse.Namespace) -> int:
+    if args.metadata_file:
+        source = Path(args.metadata_file).expanduser()
+        if source.is_symlink() or not source.is_file():
+            raise ContractError("metadata file must be a regular file")
+        metadata = json.loads(source.read_text(encoding="utf-8"))
+    else:
+        metadata = json.loads(args.metadata)
+    if not isinstance(metadata, dict):
+        raise ContractError("metadata must be a JSON object")
+    prompt = sys.stdin.buffer.read(100_001)
+    if len(prompt) > 100_000:
+        raise ContractError("workflow prompt exceeds the 100000-byte limit")
+    try:
+        prompt_text = prompt.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ContractError("workflow prompt must be UTF-8") from exc
+    receipt = WorkflowRunner().submit(
+        prompt=prompt_text, metadata=metadata, profile=args.profile
+    )
+    _print(receipt)
+    return 0 if receipt["status"] in {"COMPLETED", "PATCH_READY"} else EXIT_POLICY
+
+
+def command_artifact(args: argparse.Namespace) -> int:
+    _print(ArtifactStore().inspect(args.id))
+    return 0
+
+
+def command_accept(args: argparse.Namespace) -> int:
+    receipt = ArtifactStore(telemetry=TelemetryStore()).accept(
+        args.id,
+        expected_sha256=args.sha256,
+        human_approved=args.approve,
+    )
+    _print(receipt)
+    return 0
+
+
+def command_reject(args: argparse.Namespace) -> int:
+    receipt = ArtifactStore(telemetry=TelemetryStore()).reject(
+        args.id,
+        human_approved=args.approve,
+        reason=args.reason,
+    )
+    _print(receipt)
+    return 0
+
+
+def command_workflow_canary(args: argparse.Namespace) -> int:
+    receipt = run_abacus_workflow_canaries(args.model, attempts=args.attempts)
+    _print(receipt)
+    return 0 if receipt["promotion_ready"] else EXIT_POLICY
+
+
+def command_claude_hook(args: argparse.Namespace) -> int:
+    profile = load_profile(args.profile)
+    if not profile.repo_root:
+        raise ContractError("Claude gateway profile requires repo_root")
+    raw = sys.stdin.buffer.read(1_000_001)
+    if len(raw) > 1_000_000:
+        raise ContractError("Claude hook input exceeds 1 MB")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ContractError("Claude hook input must be JSON") from exc
+    if not isinstance(payload, dict):
+        raise ContractError("Claude hook input must be an object")
+    state = TelemetryStore().path.parent / "claude-attestations"
+    hook = ClaudeGatewayHook(
+        profile=args.profile,
+        repo=Path(profile.repo_root),
+        state_root=state,
+        gate_commands=profile.deterministic_gates,
+        readiness=lambda: build_doctor_report(args.profile, check="readiness"),
+    )
+    if args.event == "session-start":
+        result = hook.session_start(payload, environment=os.environ)
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
+        return result.exit_code
+    _print(hook.pre_tool_use(payload))
+    return 0
 
 
 def command_route(args: argparse.Namespace) -> int:
@@ -512,7 +646,7 @@ def command_broker_serve(args: argparse.Namespace) -> int:
 
 
 def command_mcp_serve(args: argparse.Namespace) -> int:
-    serve_stdio()
+    serve_stdio(profile=args.profile)
     return 0
 
 
@@ -626,7 +760,45 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("--profile", default="default")
+    doctor.add_argument("--check", choices=("readiness", "full"), default="readiness")
     doctor.set_defaults(func=command_doctor)
+
+    submit = subparsers.add_parser("submit")
+    submit.add_argument("--profile", default="chunsa")
+    metadata_group = submit.add_mutually_exclusive_group(required=True)
+    metadata_group.add_argument("--metadata")
+    metadata_group.add_argument("--metadata-file")
+    submit.set_defaults(func=command_submit)
+
+    artifact = subparsers.add_parser("artifact")
+    artifact.add_argument("--id", required=True)
+    artifact.set_defaults(func=command_artifact)
+
+    accept = subparsers.add_parser("accept")
+    accept.add_argument("--id", required=True)
+    accept.add_argument("--sha256", required=True)
+    accept.add_argument("--approve", action="store_true")
+    accept.set_defaults(func=command_accept)
+
+    reject = subparsers.add_parser("reject")
+    reject.add_argument("--id", required=True)
+    reject.add_argument("--reason")
+    reject.add_argument("--approve", action="store_true")
+    reject.set_defaults(func=command_reject)
+
+    claude_hook = subparsers.add_parser("claude-hook")
+    claude_hook.add_argument("event", choices=("session-start", "pre-tool-use"))
+    claude_hook.add_argument("--profile", default="chunsa")
+    claude_hook.set_defaults(func=command_claude_hook)
+
+    workflow_canary = subparsers.add_parser("workflow-canary")
+    workflow_canary.add_argument(
+        "--model",
+        required=True,
+        choices=("abacus-qwen3.8-max", "abacus-grok-4.6"),
+    )
+    workflow_canary.add_argument("--attempts", type=int, default=5)
+    workflow_canary.set_defaults(func=command_workflow_canary)
 
     config_parser = subparsers.add_parser("config")
     config_subparsers = config_parser.add_subparsers(
@@ -819,6 +991,7 @@ def build_parser() -> argparse.ArgumentParser:
     broker.set_defaults(func=command_broker_serve)
 
     mcp = subparsers.add_parser("mcp-serve")
+    mcp.add_argument("--profile", default=None)
     mcp.set_defaults(func=command_mcp_serve)
 
     panel = subparsers.add_parser("panel")

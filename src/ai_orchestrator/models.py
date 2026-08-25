@@ -105,6 +105,9 @@ class TaskSpec:
     max_repairs: int = 2
     max_changed_files: int = 40
     max_patch_bytes: int = 1_048_576
+    # Digest-only representation for MCP/CLI submissions whose prompt must
+    # never be materialized in the repository or state directory.
+    inline_prompt_sha256: str | None = None
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any]) -> TaskSpec:
@@ -224,7 +227,17 @@ class TaskSpec:
         return Path(self.repo, self.prompt_file) if self.prompt_file else None
 
     def context_sha256(self) -> str:
+        if self.inline_prompt_sha256 is not None:
+            value = self.inline_prompt_sha256.lower()
+            if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+                raise ContractError("inline prompt hash must be a hexadecimal SHA-256")
+            if not self.input_paths and self.prompt_file is None:
+                return value
         digest = hashlib.sha256()
+        if self.inline_prompt_sha256 is not None:
+            digest.update(b"inline-prompt-sha256\0")
+            digest.update(self.inline_prompt_sha256.encode("ascii"))
+            digest.update(b"\0")
         root = Path(self.repo).resolve()
         selected = ([self.prompt_file] if self.prompt_file else []) + list(
             self.input_paths
@@ -574,11 +587,11 @@ class UsageRecord:
     model: str
     outcome: str
     latency_ms: int
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cached_tokens: int = 0
-    credits_used: float = 0.0
-    estimated_cost_usd: float = 0.0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_tokens: int | None = None
+    credits_used: float | None = None
+    estimated_cost_usd: float | None = None
     cache_hit: bool = False
     provenance_verified: bool = False
     route_plan_id: str | None = None
@@ -595,7 +608,7 @@ class UsageRecord:
             self.credits_used,
             self.estimated_cost_usd,
         )
-        if any(value < 0 for value in numeric):
+        if any(value is not None and value < 0 for value in numeric):
             raise ContractError("usage counters must be non-negative")
 
     def as_dict(self) -> dict[str, Any]:

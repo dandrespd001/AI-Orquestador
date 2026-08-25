@@ -651,14 +651,28 @@ def execute(
     gate_commands: tuple[str, ...] = (),
     gate_timeout_seconds: int | None = None,
     protected_prefixes: tuple[str, ...] = (),
+    prompt_bytes: bytes | None = None,
 ) -> tuple[RunResult, bytes]:
     if not decision.auto_execute or decision.status != "READY":
         raise AdapterError("HANDOFF_REQUIRED", decision.reason)
     prompt_path = task.prompt_path()
-    if prompt_path is None:
-        raise AdapterError("PROMPT_REQUIRED", "run requires prompt_file")
-
-    prompt = _read_bounded_prompt(prompt_path, task.max_context_tokens)
+    if prompt_bytes is None:
+        if prompt_path is None:
+            raise AdapterError(
+                "PROMPT_REQUIRED", "run requires prompt_file or inline prompt"
+            )
+        prompt = _read_bounded_prompt(prompt_path, task.max_context_tokens)
+    else:
+        if not isinstance(prompt_bytes, bytes) or not prompt_bytes:
+            raise AdapterError(
+                "PROMPT_REQUIRED", "inline prompt must be non-empty bytes"
+            )
+        if len(prompt_bytes) > task.max_context_tokens * 4:
+            raise AdapterError(
+                "CONTEXT_BUDGET_EXCEEDED",
+                f"prompt exceeds the configured {task.max_context_tokens}-token budget",
+            )
+        prompt = prompt_bytes
     started = datetime.now(UTC)
     start_ns = time.monotonic_ns()
     stdout = b""

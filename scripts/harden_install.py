@@ -22,6 +22,7 @@ BACKUP_ROOT = (
     / time.strftime("pre-hardening-%Y%m%dT%H%M%SZ", time.gmtime())
 )
 OFFICIAL_OMNIROUTE_PROVIDERS = {"deepseek", "kimi-coding", "moonshot", "minimax"}
+CHUNSA_ROOT = Path("/home/adquiod/Imágenes/Project/CHUNSA001")
 
 
 def private_dir(path: Path) -> None:
@@ -165,6 +166,90 @@ def install_files() -> None:
         target.chmod(0o600)
 
 
+def install_chunsa_integration(repo: Path = CHUNSA_ROOT) -> list[str]:
+    """Install only the shared Claude gateway files, preserving unrelated work."""
+
+    target_root = repo.expanduser().resolve()
+    if not target_root.is_dir() or target_root.is_symlink():
+        raise RuntimeError("CHUNSA repository is unavailable or unsafe")
+    sources = {
+        ".mcp.json": SOURCE / "integrations" / "chunsa" / ".mcp.json",
+        ".claude/settings.json": (
+            SOURCE / "integrations" / "chunsa" / ".claude" / "settings.json"
+        ),
+        "tools/chunsa_ai.sh": SOURCE / "tools" / "chunsa_ai.sh",
+    }
+    installed: list[str] = []
+    for relative, source in sources.items():
+        destination = target_root / relative
+        if destination.is_symlink():
+            raise RuntimeError(f"refusing symlinked CHUNSA integration: {relative}")
+        if destination.exists():
+            if not destination.is_file():
+                raise RuntimeError(f"unsafe CHUNSA integration target: {relative}")
+            if destination.read_bytes() != source.read_bytes():
+                tracked = (
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(target_root),
+                            "ls-files",
+                            "--error-unmatch",
+                            "--",
+                            relative,
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    ).returncode
+                    == 0
+                )
+                dirty = subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(target_root),
+                        "status",
+                        "--porcelain=v1",
+                        "--untracked-files=all",
+                        "--",
+                        relative,
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                ).stdout
+                if not tracked or dirty:
+                    raise RuntimeError(
+                        "refusing to overwrite local CHUNSA integration change: "
+                        + relative
+                    )
+                shutil.copy2(source, destination)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        destination.chmod(0o700 if relative.endswith(".sh") else 0o600)
+        installed.append(relative)
+    return sorted(installed)
+
+
+def start_broker_service() -> None:
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    subprocess.run(
+        [
+            "systemctl",
+            "--user",
+            "enable",
+            "--now",
+            "ai-orchestrator-broker.service",
+        ],
+        check=True,
+    )
+
+
 def harden_modes(roots: tuple[Path, ...] | None = None) -> dict[str, int]:
     selected_roots = roots or (
         HOME / ".omniroute",
@@ -215,6 +300,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--apply-provider-policy", action="store_true")
+    parser.add_argument("--install-chunsa-gateway", action="store_true")
+    parser.add_argument("--start-broker", action="store_true")
     parser.add_argument(
         "--install-only",
         action="store_true",
@@ -230,6 +317,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.install_only:
         private_dir(STATE_ROOT)
         install_files()
+        integration = (
+            install_chunsa_integration() if args.install_chunsa_gateway else []
+        )
+        if args.start_broker:
+            start_broker_service()
         modes = harden_modes()
         print(
             json.dumps(
@@ -238,6 +330,8 @@ def main(argv: list[str] | None = None) -> int:
                     "status": "INSTALL_REPAIRED",
                     "credentials_rotated": False,
                     "plaintext_credentials_read": False,
+                    "chunsa_integration": integration,
+                    "broker_started": args.start_broker,
                     "permissions": modes,
                 },
                 sort_keys=True,
@@ -269,6 +363,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     backup(environment_path)
     install_files()
+    integration = install_chunsa_integration() if args.install_chunsa_gateway else []
+    if args.start_broker:
+        start_broker_service()
     credentials = encrypt_credentials(values)
     database = harden_omniroute_database(
         HOME / ".omniroute" / "storage.sqlite",
@@ -282,6 +379,8 @@ def main(argv: list[str] | None = None) -> int:
         "credential_names": credentials,
         "database": database,
         "permissions": modes,
+        "chunsa_integration": integration,
+        "broker_started": args.start_broker,
         "plaintext_environment_retained_until_service_verification": True,
     }
     receipt_path = STATE_ROOT / "hardening-receipt.json"

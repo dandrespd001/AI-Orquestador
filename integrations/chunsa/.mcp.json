@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ai-orchestrator": {
+      "type": "stdio",
+      "command": "ai-orchestrator",
+      "args": ["mcp-serve", "--profile", "chunsa"],
+      "env": {}
+    }
+  }
+}

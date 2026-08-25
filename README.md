@@ -63,16 +63,16 @@ credenciales, modelos, rutas, consumo, perfiles, extensiones, actualizaciones y
 sesiones. Los campos de credencial son de sólo escritura; cada arranque entrega
 por terminal una capacidad humana válida para una sola mutación.
 
-La superficie MCP (`ai-orchestrator mcp-serve`) ofrece inventario, diagnóstico y
-simulación de rutas sin secretos. También expone dos acciones explícitas:
-`orchestrator_run_task` reutiliza la política, adaptadores, worktrees, gates y
-telemetría del proyecto para todos los proveedores configurados;
-`orchestrator_delegate_abacus` usa el login Pro oficial en modo acotado. La MCP
-nunca activa extensiones, escribe credenciales ni aplica un parche al repositorio
-fuente: cualquier escritura delegada termina en `PATCH_READY`. Harness recibe la
-superficie administrativa de consulta a través del broker Unix; Codex, Claude,
-Kimi, Qwen, OpenCode, Abacus y FX pueden recibir configuraciones mínimas por perfil
-desde el mismo catálogo:
+La superficie MCP genérica (`ai-orchestrator mcp-serve`) ofrece inventario,
+diagnóstico, simulación y ejecución acotada sin secretos. Al iniciarla con
+`--profile chunsa` se vuelve estricta: deriva el repositorio del perfil, rechaza
+otro directorio de lanzamiento y sustituye las acciones directas por
+`orchestrator_submit_task`. El prompt llega inline, sólo se conserva su SHA-256 y
+las escrituras terminan en un artefacto privado `PATCH_READY`; aplicar o rechazar
+ese artefacto exige un comando humano fuera de MCP. Harness recibe la superficie
+administrativa de consulta a través del broker Unix; Codex, Claude, Kimi, Qwen,
+OpenCode, Abacus y FX pueden recibir configuraciones mínimas por perfil desde el
+mismo catálogo:
 
 ```bash
 .venv/bin/ai-orchestrator client-config --client codex --profile default
@@ -81,6 +81,8 @@ desde el mismo catálogo:
 
 La arquitectura completa y el flujo de confianza están en
 [Control modular y extensiones comunitarias](docs/modular-control-plane.md).
+El gateway estricto de CHUNSA, sus workflows y su operación están en
+[Gateway Claude de CHUNSA](docs/chunsa-claude-gateway.md).
 
 ## Extensiones comunitarias
 

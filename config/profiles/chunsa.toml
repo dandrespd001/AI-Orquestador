@@ -14,6 +14,8 @@ allowed_models = [
   "deepseek-v4-pro",
   "MiniMax-M3",
   "kimi-official",
+  "abacus-qwen3.8-max",
+  "abacus-grok-4.6",
   "fx-glm-5.2-promo",
   "local-qwen36-agent",
   "gemini-free-fast",

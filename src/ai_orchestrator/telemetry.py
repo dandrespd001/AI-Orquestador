@@ -102,11 +102,11 @@ class TelemetryStore:
                     created_at TEXT NOT NULL,
                     provider TEXT NOT NULL,
                     model TEXT NOT NULL,
-                    input_tokens INTEGER NOT NULL,
-                    output_tokens INTEGER NOT NULL,
-                    cached_tokens INTEGER NOT NULL,
-                    credits_used REAL NOT NULL,
-                    estimated_cost_usd REAL NOT NULL,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    cached_tokens INTEGER,
+                    credits_used REAL,
+                    estimated_cost_usd REAL,
                     cache_hit INTEGER NOT NULL CHECK (cache_hit IN (0, 1)),
                     latency_ms INTEGER NOT NULL,
                     outcome TEXT NOT NULL,
@@ -117,13 +117,216 @@ class TelemetryStore:
                     ON usage_records(created_at);
                 CREATE INDEX IF NOT EXISTS idx_usage_provider_model
                     ON usage_records(provider, model);
+
+                CREATE TABLE IF NOT EXISTS workflows (
+                    workflow_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    profile TEXT NOT NULL,
+                    task_type TEXT NOT NULL,
+                    prompt_sha256 TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    budget_tokens INTEGER,
+                    budget_credits REAL,
+                    final_verdict TEXT,
+                    artifact_id TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_workflows_created
+                    ON workflows(created_at);
+                CREATE TABLE IF NOT EXISTS workflow_stages (
+                    workflow_id TEXT NOT NULL REFERENCES workflows(workflow_id),
+                    stage TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    budget_tokens INTEGER,
+                    budget_credits REAL,
+                    status TEXT NOT NULL,
+                    verdict TEXT,
+                    run_id TEXT,
+                    PRIMARY KEY (workflow_id, stage)
+                );
+                CREATE TABLE IF NOT EXISTS workflow_acceptances (
+                    acceptance_id TEXT PRIMARY KEY,
+                    workflow_id TEXT NOT NULL REFERENCES workflows(workflow_id),
+                    artifact_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    verdict TEXT NOT NULL
+                );
                 """
             )
+            self._migrate_usage_nullable(connection)
         os.chmod(self.path, 0o600)
         for suffix in ("-wal", "-shm"):
             candidate = Path(f"{self.path}{suffix}")
             if candidate.exists() and not candidate.is_symlink():
                 os.chmod(candidate, 0o600)
+
+    @staticmethod
+    def _migrate_usage_nullable(connection: sqlite3.Connection) -> None:
+        """Rebuild legacy usage metadata without losing a single row."""
+
+        info = connection.execute("PRAGMA table_info(usage_records)").fetchall()
+        nullable_counters = {
+            "input_tokens",
+            "output_tokens",
+            "cached_tokens",
+            "credits_used",
+            "estimated_cost_usd",
+        }
+        if not any(row[1] in nullable_counters and int(row[3]) for row in info):
+            return
+        connection.executescript(
+            """
+            CREATE TABLE usage_records_nullable (
+                record_id TEXT PRIMARY KEY,
+                route_plan_id TEXT,
+                created_at TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                cached_tokens INTEGER,
+                credits_used REAL,
+                estimated_cost_usd REAL,
+                cache_hit INTEGER NOT NULL CHECK (cache_hit IN (0, 1)),
+                latency_ms INTEGER NOT NULL,
+                outcome TEXT NOT NULL,
+                provenance_verified INTEGER NOT NULL
+                    CHECK (provenance_verified IN (0, 1))
+            );
+            INSERT INTO usage_records_nullable (
+                record_id, route_plan_id, created_at, provider, model,
+                input_tokens, output_tokens, cached_tokens, credits_used,
+                estimated_cost_usd, cache_hit, latency_ms, outcome,
+                provenance_verified
+            ) SELECT
+                record_id, route_plan_id, created_at, provider, model,
+                input_tokens, output_tokens, cached_tokens, credits_used,
+                estimated_cost_usd, cache_hit, latency_ms, outcome,
+                provenance_verified
+            FROM usage_records;
+            DROP TABLE usage_records;
+            ALTER TABLE usage_records_nullable RENAME TO usage_records;
+            CREATE INDEX idx_usage_created ON usage_records(created_at);
+            CREATE INDEX idx_usage_provider_model
+                ON usage_records(provider, model);
+            """
+        )
+
+    def record_workflow(
+        self,
+        *,
+        workflow_id: str,
+        task_id: str,
+        profile: str,
+        task_type: str,
+        prompt_sha256: str,
+        status: str,
+        budget_tokens: int | None = None,
+        budget_credits: float | None = None,
+    ) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO workflows (
+                    workflow_id, task_id, created_at, profile, task_type,
+                    prompt_sha256, status, budget_tokens, budget_credits
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    workflow_id,
+                    task_id,
+                    datetime.now(UTC).isoformat(),
+                    profile,
+                    task_type,
+                    prompt_sha256,
+                    status,
+                    budget_tokens,
+                    budget_credits,
+                ),
+            )
+
+    def record_workflow_stage(
+        self,
+        *,
+        workflow_id: str,
+        stage: str,
+        provider: str,
+        model: str,
+        status: str,
+        verdict: str | None = None,
+        run_id: str | None = None,
+        budget_tokens: int | None = None,
+        budget_credits: float | None = None,
+    ) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO workflow_stages (
+                    workflow_id, stage, created_at, provider, model,
+                    budget_tokens, budget_credits, status, verdict, run_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    workflow_id,
+                    stage,
+                    datetime.now(UTC).isoformat(),
+                    provider,
+                    model,
+                    budget_tokens,
+                    budget_credits,
+                    status,
+                    verdict,
+                    run_id,
+                ),
+            )
+
+    def finalize_workflow(
+        self,
+        workflow_id: str,
+        *,
+        status: str,
+        verdict: str | None,
+        artifact_id: str | None = None,
+    ) -> None:
+        with closing(self._connect()) as connection, connection:
+            cursor = connection.execute(
+                """
+                UPDATE workflows
+                SET status = ?, final_verdict = ?, artifact_id = ?
+                WHERE workflow_id = ?
+                """,
+                (status, verdict, artifact_id, workflow_id),
+            )
+        if cursor.rowcount != 1:
+            raise ValueError("unknown workflow")
+
+    def record_acceptance(
+        self,
+        *,
+        workflow_id: str,
+        artifact_id: str,
+        verdict: str,
+        accepted_at: str | None = None,
+    ) -> None:
+        import uuid
+
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """
+                INSERT INTO workflow_acceptances (
+                    acceptance_id, workflow_id, artifact_id, created_at, verdict
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    workflow_id,
+                    artifact_id,
+                    accepted_at or datetime.now(UTC).isoformat(),
+                    verdict,
+                ),
+            )
 
     def record_route(self, task: TaskSpec, decision: RouteDecision) -> None:
         import hashlib
@@ -301,6 +504,9 @@ class TelemetryStore:
             usage_records = connection.execute(
                 "SELECT COUNT(*) FROM usage_records"
             ).fetchone()[0]
+            workflows = connection.execute("SELECT COUNT(*) FROM workflows").fetchone()[
+                0
+            ]
             rows = connection.execute(
                 """
                 SELECT requested_model, COUNT(*) AS total,
@@ -312,11 +518,9 @@ class TelemetryStore:
             ).fetchall()
             usage = connection.execute(
                 """
-                SELECT COALESCE(SUM(input_tokens), 0),
-                       COALESCE(SUM(output_tokens), 0),
-                       COALESCE(SUM(cached_tokens), 0),
-                       COALESCE(SUM(credits_used), 0),
-                       COALESCE(SUM(estimated_cost_usd), 0)
+                SELECT SUM(input_tokens), SUM(output_tokens),
+                       SUM(cached_tokens), SUM(credits_used),
+                       SUM(estimated_cost_usd)
                 FROM usage_records
                 """
             ).fetchone()
@@ -325,12 +529,15 @@ class TelemetryStore:
             "route_count": routes,
             "run_count": runs,
             "usage_record_count": usage_records,
+            "workflow_count": workflows,
             "usage": {
-                "input_tokens": int(usage[0]),
-                "output_tokens": int(usage[1]),
-                "cached_tokens": int(usage[2]),
-                "credits_used": float(usage[3]),
-                "estimated_cost_usd": float(usage[4]),
+                "input_tokens": int(usage[0]) if usage[0] is not None else None,
+                "output_tokens": int(usage[1]) if usage[1] is not None else None,
+                "cached_tokens": int(usage[2]) if usage[2] is not None else None,
+                "credits_used": float(usage[3]) if usage[3] is not None else None,
+                "estimated_cost_usd": (
+                    float(usage[4]) if usage[4] is not None else None
+                ),
             },
             "models": [
                 {
