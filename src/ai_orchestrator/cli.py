@@ -49,6 +49,7 @@ from ai_orchestrator.credentials import (
 )
 from ai_orchestrator.evals import run_routing_eval
 from ai_orchestrator.extensions import ExtensionRegistry, extension_manifest_from_file
+from ai_orchestrator.fetch import fetch_resource, list_staged
 from ai_orchestrator.harness import harness_launch_spec, validate_harness_launch
 from ai_orchestrator.mcp_install import global_mcp_status, repo_mcp_status
 from ai_orchestrator.mcp_install import install as install_mcp_client
@@ -729,6 +730,24 @@ def command_component_rollback(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_fetch(args: argparse.Namespace) -> int:
+    """Bring one external resource into staging, never into a repository."""
+
+    if args.list:
+        _print({"schema_version": 1, "staged": list_staged()})
+        return 0
+    if not args.url:
+        raise ContractError("fetch requires --url or --list")
+    _print(
+        fetch_resource(
+            args.url,
+            timeout_seconds=args.timeout,
+            expected_sha256=args.sha256,
+        )
+    )
+    return 0
+
+
 def command_mcp_install(args: argparse.Namespace) -> int:
     """Register this orchestrator as an MCP server in the CLIs that accept one."""
 
@@ -1043,6 +1062,13 @@ def build_parser() -> argparse.ArgumentParser:
     component_rollback.add_argument("--name", required=True)
     component_rollback.add_argument("--approve", action="store_true")
     component_rollback.set_defaults(func=command_component_rollback)
+
+    fetch = subparsers.add_parser("fetch")
+    fetch.add_argument("--url", default=None)
+    fetch.add_argument("--sha256", default=None, help="fail if the digest differs")
+    fetch.add_argument("--timeout", type=float, default=120.0)
+    fetch.add_argument("--list", action="store_true", help="list staged downloads")
+    fetch.set_defaults(func=command_fetch)
 
     mcp_install = subparsers.add_parser("mcp-install")
     mcp_install.add_argument(

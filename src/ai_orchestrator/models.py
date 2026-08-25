@@ -321,6 +321,11 @@ class RoleConfig:
     reviewers: tuple[str, ...]
     reasoning_effort: str = "high"
     reviewer_reasoning_effort: str = "high"
+    # Los adaptadores bloquean busqueda y fetch web en todos los transportes.
+    # Investigar sin poder mirar fuera del repositorio no es investigar, asi
+    # que el permiso se abre por rol y no globalmente: sigue apagado por
+    # defecto, y solo los roles que lo declaran lo reciben.
+    web_access: bool = False
 
 
 @dataclass(frozen=True)
@@ -374,6 +379,9 @@ class RouteDecision:
     reasoning_effort: str | None = None
     reviewer_reasoning_effort: str | None = None
     max_concurrency: int = 1
+    # Viaja desde RoleConfig para que la politica viva en el enrutador y el
+    # adaptador solo la obedezca.
+    web_access: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

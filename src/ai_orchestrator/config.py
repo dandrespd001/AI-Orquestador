@@ -177,6 +177,7 @@ def load_roles(root: Path | None = None) -> dict[str, RoleConfig]:
             reviewers=tuple(str(value) for value in raw.get("reviewers", ())),
             reasoning_effort=str(raw.get("reasoning_effort", "high")),
             reviewer_reasoning_effort=str(raw.get("reviewer_reasoning_effort", "high")),
+            web_access=bool(raw.get("web_access", False)),
         )
         if role.reasoning_effort not in ALLOWED_REASONING_EFFORTS:
             raise ContractError(f"invalid reasoning_effort for role {name}")

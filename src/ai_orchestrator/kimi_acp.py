@@ -26,7 +26,7 @@ class AcpOutcome:
     reported_model: str
 
 
-_LOCAL_POLICY = b"""default_permission_mode = "manual"
+_POLICY_TEMPLATE = """default_permission_mode = "manual"
 merge_all_available_skills = false
 builtin_product_skills = false
 telemetry = false
@@ -37,7 +37,7 @@ keep_alive_on_exit = false
 bash_auto_background_on_timeout = false
 
 [tools]
-disabled = ["Bash", "Agent", "AgentSwarm", "CronCreate", "CronList", "CronDelete", "WebSearch", "FetchURL", "EnterPlanMode", "ExitPlanMode"]
+disabled = [{disabled}]
 
 [[permission.rules]]
 decision = "allow"
@@ -64,9 +64,29 @@ decision = "deny"
 pattern = "AgentSwarm"
 """
 
+_ALWAYS_DISABLED = (
+    "Bash",
+    "Agent",
+    "AgentSwarm",
+    "CronCreate",
+    "CronList",
+    "CronDelete",
+    "EnterPlanMode",
+    "ExitPlanMode",
+)
+# Leer la web se abre por rol, no globalmente: un rol de investigacion lo
+# necesita y uno de implementacion no tiene por que tenerlo.
+_WEB_TOOLS = ("WebSearch", "FetchURL")
+
+
+def _policy_bytes(*, web_access: bool = False) -> bytes:
+    disabled = _ALWAYS_DISABLED if web_access else (*_ALWAYS_DISABLED, *_WEB_TOOLS)
+    rendered = ", ".join(f'"{name}"' for name in disabled)
+    return _POLICY_TEMPLATE.format(disabled=rendered).encode()
+
 
 @contextmanager
-def temporary_kimi_policy(worktree: Path):
+def temporary_kimi_policy(worktree: Path, *, web_access: bool = False):
     """Install a non-persistent project policy while the ACP process starts."""
 
     directory = worktree / ".kimi-code"
@@ -77,7 +97,7 @@ def temporary_kimi_policy(worktree: Path):
     previous = policy.read_bytes() if existed else None
     previous_mode = policy.stat().st_mode & 0o777 if existed else None
     directory.mkdir(parents=True, exist_ok=True)
-    policy.write_bytes(_LOCAL_POLICY)
+    policy.write_bytes(_policy_bytes(web_access=web_access))
     policy.chmod(0o600)
     try:
         yield
@@ -326,8 +346,9 @@ def run_kimi_acp(
     model: str,
     prompt: bytes,
     timeout_seconds: int,
+    web_access: bool = False,
 ) -> AcpOutcome:
-    with temporary_kimi_policy(worktree):
+    with temporary_kimi_policy(worktree, web_access=web_access):
         client = KimiAcpClient(
             executable=executable,
             worktree=worktree,

@@ -522,4 +522,5 @@ def select_route(
             role.reviewer_reasoning_effort if reviewer_model else None
         ),
         max_concurrency=selected.max_concurrency,
+        web_access=role.web_access,
     )

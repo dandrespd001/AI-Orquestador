@@ -153,8 +153,13 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             "--permission-mode",
             "acceptEdits" if writing else "plan",
             "--disallowedTools",
-            "Bash,Agent,WebFetch,WebSearch",
+            "Bash,Agent" if decision.web_access else "Bash,Agent,WebFetch,WebSearch",
         ]
+        if decision.web_access:
+            # La lectura de la web se declara ademas en --tools: quitarla del
+            # bloqueo no basta para que el CLI la ofrezca.
+            index = command.index("--tools") + 1
+            command[index] = f"{command[index]},WebFetch,WebSearch"
         return command
     if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
         # 2026-08-20: MiniMax pasa tambien a "openai" — su superficie Anthropic
@@ -173,7 +178,11 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             "--approval-mode",
             "plan" if guarded_patch or not writing else "auto-edit",
             "--exclude-tools",
-            "run_shell_command,agent,web_fetch,web_search,skill",
+            (
+                "run_shell_command,agent,skill"
+                if decision.web_access
+                else "run_shell_command,agent,web_fetch,web_search,skill"
+            ),
             "--max-wall-time",
             f"{task.timeout_seconds}s",
             # 30, no 8. Con 8 solo caben los canarios: una tarea real de
@@ -430,6 +439,7 @@ def _run_once(
                 model=str(decision.requested_route_model),
                 prompt=prompt,
                 timeout_seconds=task.timeout_seconds,
+                web_access=decision.web_access,
             )
             return (
                 ProcessOutcome(0, outcome.stdout, outcome.stderr),

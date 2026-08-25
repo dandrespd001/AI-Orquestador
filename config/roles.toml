@@ -94,10 +94,12 @@ reviewer_reasoning_effort = "high"
 # Kimi encabeza. Grok se omite de `models` pese a declarar research: su 0.92
 # ganaría siempre la lectura y dejaría a Kimi sin uso otra vez.
 [roles.research]
+# El Director abrio la web a este rol el 2026-08-25: investigar sin poder
+# mirar fuera del repositorio no es investigar.
+web_access = true
 models = [
     "kimi-official",
     "fx-glm-5.2-promo",
-    "gemini-free-fast",
     "claude-sonnet",
 ]
 reviewers = ["gpt-5.6-terra", "claude-opus"]
@@ -106,6 +108,8 @@ reviewer_reasoning_effort = "high"
 
 # MiniMax encabeza documentación: volumen alto y contexto amplio.
 [roles.docs]
+# Documentar suele exigir consultar la API o la referencia real de un tercero.
+web_access = true
 models = [
     "MiniMax-M3",
     "deepseek-v4-flash",
@@ -159,6 +163,64 @@ reviewer_reasoning_effort = "xhigh"
 
 [roles.godot_ui]
 models = ["kimi-official", "gpt-5.6-luna", "claude-sonnet"]
+reviewers = ["claude-sonnet", "gpt-5.6-sol"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
+
+# ---------------------------------------------------------------------------
+# Roles no centrados en codigo, anadidos el 2026-08-25. Hasta aqui los catorce
+# roles eran de programacion, con dos especificos de CHUNSA, y el orquestador
+# no cubria diseno, edicion de prosa, analisis de datos ni nada con imagen.
+# ---------------------------------------------------------------------------
+
+# Interfaz, experiencia, maquetacion y sistemas visuales. Distinto de godot_ui,
+# que es la interfaz concreta de CHUNSA.
+[roles.design]
+web_access = true
+models = [
+    "kimi-official",
+    "claude-sonnet",
+    "gpt-5.6-luna",
+]
+reviewers = ["claude-sonnet", "gpt-5.6-sol"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
+
+# Edicion de prosa: reescritura, correccion, traduccion y ajuste de tono.
+# Distinto de docs, que es escribir documentacion tecnica desde cero. MiniMax
+# encabeza por la misma razon que en long_context: el texto largo es suyo.
+[roles.content_edit]
+models = [
+    "MiniMax-M3",
+    "kimi-official",
+    "claude-sonnet",
+]
+reviewers = ["claude-opus", "gpt-5.6-terra"]
+reasoning_effort = "medium"
+reviewer_reasoning_effort = "high"
+
+# Exploracion de datos, tablas y notebooks. Distinto de statistics, que es
+# rigor estadistico y va con presupuesto de razonamiento alto.
+[roles.data_analysis]
+models = [
+    "abacus-qwen3.8-max",
+    "MiniMax-M3",
+    "gpt-5.6-terra",
+    "deepseek-v4-flash",
+]
+reviewers = ["gpt-5.6-terra", "claude-opus"]
+reasoning_effort = "high"
+reviewer_reasoning_effort = "high"
+
+# Tareas con imagen o video. Solo entran modelos que declaran vision en el
+# catalogo del gateway.
+[roles.multimodal]
+models = [
+    "gemini-free-fast",
+    "MiniMax-M3",
+    "abacus-grok-4.6",
+    "claude-sonnet",
+]
 reviewers = ["claude-sonnet", "gpt-5.6-sol"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
