@@ -26,6 +26,7 @@ OFFICIAL_OAUTH_STORES = {
     "anthropic": Path.home() / ".claude",
     "moonshot": Path.home() / ".kimi-code" / "credentials",
     "abacus": Path.home() / ".abacusai",
+    "fx": Path.home() / ".fx" / "auth.json",
 }
 
 
@@ -360,6 +361,7 @@ def authentication_inventory(
         store.status("anthropic", profile=profile),
         store.status("moonshot", profile=profile),
         store.status("abacus", profile=profile),
+        store.status("fx", profile=profile),
         store.status(
             "minimax",
             profile=profile,

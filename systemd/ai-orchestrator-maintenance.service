@@ -6,6 +6,15 @@ ConditionPathExists=%h/.local/bin/ai-orchestrator
 Type=oneshot
 UMask=0077
 ExecStart=%h/.local/bin/ai-orchestrator storage maintain --apply-permissions --purge-metadata
+ExecStart=%h/.local/bin/ai-orchestrator storage maintain --bound-journals --apply
+# Un ExecStart por base auditada: --compact acepta una sola ruta y exige
+# coincidencia exacta con SQLITE_TARGETS. El prefijo '-' evita que una base
+# en uso, que compact_sqlite rechaza a proposito, aborte el resto del ciclo.
+ExecStart=-%h/.local/bin/ai-orchestrator storage maintain --compact %h/.codex/logs_2.sqlite
+ExecStart=-%h/.local/bin/ai-orchestrator storage maintain --compact %h/.codex/state_5.sqlite
+ExecStart=-%h/.local/bin/ai-orchestrator storage maintain --compact %h/.omniroute/storage.sqlite
+ExecStart=-%h/.local/bin/ai-orchestrator storage maintain --compact %h/.local/share/opencode/opencode.db
+ExecStart=-%h/.local/bin/ai-orchestrator storage maintain --compact %h/.minimax_mcp/tasks.db
 ExecStart=%h/.local/bin/ai-orchestrator sessions-maintain --retention-days 7 --apply
 TimeoutStartSec=30min
 MemoryMax=1G

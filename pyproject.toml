@@ -22,6 +22,7 @@ optimize = [
 ai-orchestrator = "ai_orchestrator.cli:main"
 ai-orchestrator-omniroute-wrapper = "ai_orchestrator.service_wrapper:main"
 omniroute-safe = "ai_orchestrator.omniroute_safe:main"
+qwen-safe = "ai_orchestrator.qwen_safe:main"
 ai-orchestrator-mcp = "ai_orchestrator.mcp_tools:serve_stdio"
 
 [tool.setuptools]
