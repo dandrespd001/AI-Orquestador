@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from ai_orchestrator.mcp_install import repo_mcp_status
 from ai_orchestrator.models import ensure_private_directory
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9._-]{1,200}$")
@@ -119,20 +120,10 @@ class ClaudeGatewayHook:
         return self.state_root / f"{value}.json"
 
     def _mcp_configured(self) -> bool:
-        source = self.repo / ".mcp.json"
-        if source.is_symlink() or not source.is_file():
-            return False
-        try:
-            payload = json.loads(source.read_text(encoding="utf-8"))
-            server = payload["mcpServers"]["ai-orchestrator"]
-            arguments = server.get("args", ())
-        except (KeyError, TypeError, json.JSONDecodeError, OSError):
-            return False
-        return server.get("command") == "ai-orchestrator" and list(arguments) == [
-            "mcp-serve",
-            "--profile",
-            self.profile,
-        ]
+        # Comparte comparador con doctor: el registro puede llevar el nombre
+        # pelado, el symlink de ~/.local/bin o el script del venv, y exigir una
+        # sola grafia daba falso negativo sobre un registro perfectamente valido.
+        return bool(repo_mcp_status(self.repo, self.profile)["configured"])
 
     def _project_model(self) -> str:
         source = self.repo / ".claude" / "settings.json"

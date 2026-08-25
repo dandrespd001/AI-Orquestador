@@ -50,6 +50,9 @@ from ai_orchestrator.credentials import (
 from ai_orchestrator.evals import run_routing_eval
 from ai_orchestrator.extensions import ExtensionRegistry, extension_manifest_from_file
 from ai_orchestrator.harness import harness_launch_spec, validate_harness_launch
+from ai_orchestrator.mcp_install import global_mcp_status, repo_mcp_status
+from ai_orchestrator.mcp_install import install as install_mcp_client
+from ai_orchestrator.mcp_install import status as mcp_client_status
 from ai_orchestrator.mcp_tools import serve_stdio
 from ai_orchestrator.models import ContractError, TaskSpec
 from ai_orchestrator.optimization import prompt_optimization_preflight
@@ -118,21 +121,18 @@ def _local_health() -> dict[str, object]:
 
 
 def _mcp_status(profile_name: str) -> dict[str, object]:
+    """Report where this profile's MCP server is registered.
+
+    Un perfil atado a un repositorio se comprueba contra el .mcp.json de ese
+    repositorio. Un perfil sin repositorio, como default, no puede tener uno:
+    antes eso lo dejaba en configured=False para siempre y readiness no podia
+    dar verde nunca. Ahora cae al registro global, que es su respuesta correcta.
+    """
+
     profile = load_profile(profile_name)
     if not profile.repo_root:
-        return {"configured": False, "path": None, "reason": "profile_has_no_repo"}
-    source = Path(profile.repo_root) / ".mcp.json"
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
-        server = payload["mcpServers"]["ai-orchestrator"]
-        configured = (
-            not source.is_symlink()
-            and server.get("command") == "ai-orchestrator"
-            and server.get("args") == ["mcp-serve", "--profile", profile_name]
-        )
-    except (OSError, KeyError, TypeError, json.JSONDecodeError):
-        configured = False
-    return {"configured": configured, "path": str(source)}
+        return global_mcp_status()
+    return repo_mcp_status(Path(profile.repo_root), profile_name)
 
 
 def _broker_status(profile_name: str) -> dict[str, object]:
@@ -729,6 +729,16 @@ def command_component_rollback(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_mcp_install(args: argparse.Namespace) -> int:
+    """Register this orchestrator as an MCP server in the CLIs that accept one."""
+
+    if args.status:
+        _print(mcp_client_status())
+        return 0
+    _print(install_mcp_client(args.client))
+    return 0
+
+
 def command_client_config(args: argparse.Namespace) -> int:
     payload = generate_client_config(ExtensionRegistry(), args.profile, args.client)
     if args.output:
@@ -1033,6 +1043,18 @@ def build_parser() -> argparse.ArgumentParser:
     component_rollback.add_argument("--name", required=True)
     component_rollback.add_argument("--approve", action="store_true")
     component_rollback.set_defaults(func=command_component_rollback)
+
+    mcp_install = subparsers.add_parser("mcp-install")
+    mcp_install.add_argument(
+        "--client",
+        choices=("claude", "codex", "abacus", "qwen", "opencode", "kimi"),
+        default=None,
+        help="register in one client; omit to cover every supported one",
+    )
+    mcp_install.add_argument(
+        "--status", action="store_true", help="report registration without writing"
+    )
+    mcp_install.set_defaults(func=command_mcp_install)
 
     client_config = subparsers.add_parser("client-config")
     client_config.add_argument(

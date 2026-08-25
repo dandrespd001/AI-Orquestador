@@ -1,0 +1,71 @@
+{
+  "attempts": 5,
+  "configured_execution_profile": "patch_api_writer",
+  "execution_profile": "patch_api_writer",
+  "kind": "writer_canary",
+  "model": "gemini-free-fast",
+  "orchestrator_content_retained": false,
+  "passed": 5,
+  "promotion_ready": true,
+  "provider": "antigravity",
+  "results": [
+    {
+      "attempt": 1,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 5545,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "3aa7175ab49e07b01915fc199e96871b7630ee146afbac2dbf9d4a7fc4daa6d1",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 2,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 6129,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "2918a45b1cd272d998aa2360fee86a981af32b9408b42431405f1484054a092c",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 3,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 5729,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "c373eedcefaf5cdbd7fb7fe0fa4f73fb22c05e26d49c09021e3d2836500f75dc",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 4,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 5976,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "35e6c36cf4b540d11bead042d70b45c6c790660fd493eccea427951e1dae1aba",
+      "provenance_verified": true,
+      "status": "PASSED"
+    },
+    {
+      "attempt": 5,
+      "changed_files": 1,
+      "error_code": null,
+      "exit_code": 0,
+      "latency_ms": 5512,
+      "orchestrator_content_retained": false,
+      "patch_sha256": "ab396ab31333240b290ca50b1c0acbdcc7eace24117d99c28032f33692779cc9",
+      "provenance_verified": true,
+      "status": "PASSED"
+    }
+  ],
+  "schema_version": 1,
+  "status": "PASSED",
+  "trust_tier": "web_free"
+}
