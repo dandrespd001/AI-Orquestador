@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, BinaryIO, ClassVar
 
@@ -17,6 +19,17 @@ from ai_orchestrator.models import ContractError
 from ai_orchestrator.workflows import WorkflowRunner
 
 MAX_MCP_MESSAGE_BYTES = 1_000_000
+
+# El bucle era estrictamente secuencial, asi que una tarea larga bloqueaba el
+# servidor entero: en los registros hay dos orchestrator_run_task solapadas de
+# 17m42s y 23m38s, la segunda esperando en el buffer de stdin. Quien acota de
+# verdad la concurrencia es AdmissionController, que ya reparte leases entre
+# procesos; el bucle solo le impedia llegar a ejercerse.
+MAX_MCP_WORKERS = 4
+
+# Cada cuanto se informa de que una herramienta sigue viva, cuando el cliente
+# ha pedido progreso con un progressToken.
+PROGRESS_INTERVAL_SECONDS = 15.0
 SUPPORTED_MCP_VERSIONS = ("2025-11-25", "2025-06-18")
 MCP_RESOURCE_SECTIONS = (
     "providers",
@@ -351,6 +364,7 @@ class MCPQueryServer:
         self.task_runner = task_runner or OrchestratorTaskRunner()
         self.required_profile = required_profile
         self.required_repo = required_repo.resolve() if required_repo else None
+        self._workflow_runner: Any | None = None
 
     def _profile(self, requested: object = None) -> str:
         profile = str(requested or self.required_profile or "default")
@@ -361,11 +375,32 @@ class MCPQueryServer:
         return profile
 
     def _tools(self) -> list[dict[str, Any]]:
+        """List the tools this server actually accepts.
+
+        Sin perfil hay una sola superficie con las seis herramientas: el
+        registro global se quedaba sin submit_task, que es la via de envio que
+        no representa el prompt en disco. Atado a un perfil se conserva el
+        conjunto estricto, que es una frontera de seguridad deliberada de
+        CHUNSA y no un accidente.
+        """
+
         if self.required_profile is None:
-            return list(MCP_TOOLS)
+            return [*MCP_TOOLS, MCP_SUBMIT_TOOL]
         tools = [tool for tool in MCP_TOOLS if tool["name"] in STRICT_MCP_TOOL_NAMES]
         tools.append(MCP_SUBMIT_TOOL)
         return tools
+
+    @property
+    def workflow_runner(self) -> Any:
+        """The runner that submit_task needs, built on demand when unbound."""
+
+        if self.required_profile is not None:
+            return self.task_runner
+        if self._workflow_runner is None:
+            from ai_orchestrator.workflows import WorkflowRunner
+
+            self._workflow_runner = WorkflowRunner()
+        return self._workflow_runner
 
     @staticmethod
     def _result(request_id: object, payload: object) -> dict[str, Any]:
@@ -383,6 +418,7 @@ class MCPQueryServer:
         request_id = request.get("id")
         method = request.get("method")
         if method in {"notifications/initialized", "notifications/cancelled"}:
+            # El bucle intercepta las cancelaciones antes de llegar aqui.
             return None
         if method == "initialize":
             params = request.get("params", {})
@@ -511,10 +547,10 @@ class MCPQueryServer:
                     raise ContractError("task must be an object")
                 if {"repo", "profile", "prompt", "prompt_file"} & metadata.keys():
                     raise ContractError("repository and prompt are derived by the MCP")
-                payload = self.task_runner.submit(
+                payload = self.workflow_runner.submit(
                     prompt=prompt,
                     metadata=dict(metadata),
-                    profile=self._profile(),
+                    profile=self._profile(arguments.get("profile")),
                 )
             elif name == "orchestrator_delegate_abacus":
                 prompt = arguments.get("prompt")
@@ -545,7 +581,7 @@ class MCPQueryServer:
                     call["model"] = arguments["model"]
                 payload = self.task_runner.run(**call)
             else:
-                return self._error(request_id, -32602, "unknown tool")
+                return self._error(request_id, -32601, "unknown tool")
         except (ContractError, ValueError, RuntimeError) as exc:
             return self._result(
                 request_id,
@@ -586,6 +622,7 @@ def serve_stdio(
     profile: str | None = None,
     launched_repo: Path | None = None,
     configuration_root: Path | None = None,
+    max_workers: int = MAX_MCP_WORKERS,
 ) -> None:
     selected_profile = None
     selected_root = (configuration_root or config_root()).resolve()
@@ -627,20 +664,98 @@ def serve_stdio(
     )
     reader = input_stream or sys.stdin.buffer
     writer = output_stream or sys.stdout.buffer
-    for raw in reader:
-        if len(raw) > MAX_MCP_MESSAGE_BYTES:
-            response = server._error(None, -32700, "message too large")
-        else:
+    _serve_loop(server, reader, writer, max_workers=max_workers)
+
+
+def _serve_loop(
+    server: MCPQueryServer,
+    reader: BinaryIO,
+    writer: BinaryIO,
+    *,
+    max_workers: int = MAX_MCP_WORKERS,
+) -> None:
+    """Read NDJSON requests and answer them on a bounded pool.
+
+    Reading stays on this thread because stdin is a single stream. Everything
+    else runs on the pool, so a long tool no longer holds the whole server.
+    """
+
+    write_lock = threading.Lock()
+    state_lock = threading.Lock()
+    cancelled: set[str] = set()
+    started: set[str] = set()
+
+    def emit(message: dict[str, Any]) -> None:
+        payload = json.dumps(message, sort_keys=True, separators=(",", ":")).encode()
+        with write_lock:
+            writer.write(payload + b"\n")
+            writer.flush()
+
+    def progress_token(request: dict[str, Any]) -> object:
+        params = request.get("params")
+        meta = params.get("_meta") if isinstance(params, dict) else None
+        return meta.get("progressToken") if isinstance(meta, dict) else None
+
+    def run(request: dict[str, Any]) -> None:
+        request_id = request.get("id")
+        key = json.dumps(request_id, sort_keys=True)
+        with state_lock:
+            if key in cancelled:
+                # Cancelada mientras esperaba turno: es justo el caso que
+                # antes se quedaba encolado detras de una tarea de 17 minutos.
+                cancelled.discard(key)
+                return
+            started.add(key)
+        token = progress_token(request)
+        stop = threading.Event()
+        beacon: threading.Thread | None = None
+        if token is not None:
+
+            def announce() -> None:
+                sent = 0
+                while not stop.wait(PROGRESS_INTERVAL_SECONDS):
+                    sent += 1
+                    emit(
+                        {
+                            "jsonrpc": "2.0",
+                            "method": "notifications/progress",
+                            "params": {"progressToken": token, "progress": sent},
+                        }
+                    )
+
+            beacon = threading.Thread(target=announce, daemon=True)
+            beacon.start()
+        try:
+            response = server.handle(request)
+        except Exception as exc:  # noqa: BLE001
+            response = server._error(request_id, -32603, f"internal error: {exc}")
+        finally:
+            stop.set()
+            if beacon is not None:
+                beacon.join(timeout=1.0)
+            with state_lock:
+                started.discard(key)
+        if response is not None:
+            emit(response)
+
+    with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
+        for raw in reader:
+            if len(raw) > MAX_MCP_MESSAGE_BYTES:
+                emit(server._error(None, -32700, "message too large"))
+                continue
             try:
                 request = json.loads(raw)
                 if not isinstance(request, dict):
                     raise TypeError
-                response = server.handle(request)
             except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
-                response = server._error(None, -32700, "parse error")
-        if response is not None:
-            writer.write(
-                json.dumps(response, sort_keys=True, separators=(",", ":")).encode()
-                + b"\n"
-            )
-            writer.flush()
+                emit(server._error(None, -32700, "parse error"))
+                continue
+            if request.get("method") == "notifications/cancelled":
+                params = request.get("params")
+                target = params.get("requestId") if isinstance(params, dict) else None
+                key = json.dumps(target, sort_keys=True)
+                with state_lock:
+                    if key not in started:
+                        cancelled.add(key)
+                continue
+            pool.submit(run, request)
