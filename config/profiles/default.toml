@@ -22,7 +22,7 @@ allowed_models = [
     "abacus-qwen3.8-27b",
     "abacus-glm-5.3",
 ]
-deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web"]
+deny_providers = []
 protected_path_prefixes = [".env", ".git", ".codex", ".claude", ".agents", ".kimi-code"]
 deterministic_gates = []
 minimax_mode = "direct"
@@ -31,3 +31,4 @@ allow_paid_routes = false
 max_marginal_cost_usd = 0.0
 capability_packages = []
 extensions = []
+web_free_max_sensitivity = "internal"

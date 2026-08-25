@@ -352,7 +352,10 @@ official = false
 # provenance_verified=true y gates aprobados. Solo admite datos publicos.
 status = "available"
 roles = ["tests", "boilerplate", "docs", "research"]
-max_sensitivity = "public"
+# 2026-08-25: el Director abrio el trabajo interno a las rutas
+# gratuitas. El perfil sigue siendo la puerta exterior via
+# web_free_max_sensitivity, y algoritmic las deja en "public".
+max_sensitivity = "internal"
 max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]
@@ -373,7 +376,10 @@ route_model = "qwen-web/qwen3.7-max"
 official = false
 status = "candidate"
 roles = ["tests", "boilerplate", "docs", "research"]
-max_sensitivity = "public"
+# 2026-08-25: el Director abrio el trabajo interno a las rutas
+# gratuitas. El perfil sigue siendo la puerta exterior via
+# web_free_max_sensitivity, y algoritmic las deja en "public".
+max_sensitivity = "internal"
 max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]
@@ -394,7 +400,10 @@ route_model = "huggingchat/moonshotai/Kimi-K2.7-Code"
 official = false
 status = "candidate"
 roles = ["implementation", "tests", "docs", "research"]
-max_sensitivity = "public"
+# 2026-08-25: el Director abrio el trabajo interno a las rutas
+# gratuitas. El perfil sigue siendo la puerta exterior via
+# web_free_max_sensitivity, y algoritmic las deja en "public".
+max_sensitivity = "internal"
 max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]
@@ -415,7 +424,10 @@ route_model = "zenmux-free/kuaishou/kat-coder-pro-v1-free"
 official = false
 status = "candidate"
 roles = ["implementation", "tests", "boilerplate"]
-max_sensitivity = "public"
+# 2026-08-25: el Director abrio el trabajo interno a las rutas
+# gratuitas. El perfil sigue siendo la puerta exterior via
+# web_free_max_sensitivity, y algoritmic las deja en "public".
+max_sensitivity = "internal"
 max_concurrency = 1
 trust_tier = "web_free"
 capabilities = ["read", "write", "tools"]

@@ -43,6 +43,25 @@ def _has_enough_samples(observed: dict[str, object]) -> bool:
         return False
 
 
+def _web_free_allowed(task: TaskSpec, profile: Profile) -> bool:
+    """Decide whether a free web route may see this task.
+
+    Hasta el 2026-08-25 la unica salida era tarea publica en repositorio
+    publico. El Director abrio el trabajo interno para poder aprovechar las
+    suscripciones gratuitas, a cambio de que codigo privado de sensibilidad
+    interna salga por rutas no oficiales. Lo que nunca sale es lo que
+    HANDOFF_SENSITIVITIES protege.
+    """
+
+    if profile.web_free_max_sensitivity == "internal":
+        # Modo abierto: sale trabajo publico e interno, con independencia de si
+        # el repositorio es publico. Lo demas nunca sale.
+        return task.sensitivity in {"public", "internal"}
+    # Modo estricto, el comportamiento historico: solo tarea publica y ademas
+    # repositorio publico.
+    return task.sensitivity == "public" and profile.public_repository
+
+
 def score_route_candidate(
     model: ModelConfig,
     task: TaskSpec,
@@ -247,10 +266,8 @@ def _eligible(
         UTC
     ).date() > date.fromisoformat(model.available_until):
         return False, "promotion_expired"
-    if model.trust_tier == "web_free" and (
-        task.sensitivity != "public" or not profile.public_repository
-    ):
-        return False, "web_free_requires_public_repository"
+    if model.trust_tier == "web_free" and not _web_free_allowed(task, profile):
+        return False, "web_free_sensitivity_not_allowed"
     if task.write_mode != "read_only" and "write" not in model.capabilities:
         return False, "model_not_write_capable"
     if model.provider in profile.deny_providers:

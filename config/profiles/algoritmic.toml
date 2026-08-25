@@ -16,7 +16,7 @@ allowed_models = [
     "abacus-grok-4.6",
     "abacus-qwen3.8-max",
 ]
-deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web"]
+deny_providers = ["huggingchat", "zenmux-free", "qwen-web", "antigravity", "local-ai"]
 protected_path_prefixes = [
   ".env",
   ".git",
@@ -51,3 +51,4 @@ allow_paid_routes = false
 max_marginal_cost_usd = 0.0
 capability_packages = ["systems"]
 extensions = []
+web_free_max_sensitivity = "public"

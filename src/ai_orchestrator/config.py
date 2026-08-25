@@ -206,6 +206,7 @@ def load_profile(name: str, root: Path | None = None) -> Profile:
         minimax_mode=str(raw.get("minimax_mode", "direct")),
         preserve_live_trading_false=bool(raw.get("preserve_live_trading_false", False)),
         public_repository=bool(raw.get("public_repository", False)),
+        web_free_max_sensitivity=str(raw.get("web_free_max_sensitivity", "public")),
         allow_paid_routes=bool(raw.get("allow_paid_routes", False)),
         max_marginal_cost_usd=float(raw.get("max_marginal_cost_usd", 0.0)),
         capability_packages=tuple(
@@ -220,9 +221,17 @@ def load_profile(name: str, root: Path | None = None) -> Profile:
         sensitivity_rank(sensitivity)
     if profile.minimax_mode not in {"direct", "delegate-minimax-api", "disabled"}:
         raise ContractError("invalid minimax_mode")
+    if profile.web_free_max_sensitivity not in {"public", "internal"}:
+        raise ContractError("web_free_max_sensitivity must be public or internal")
     if profile.max_marginal_cost_usd < 0:
         raise ContractError("max_marginal_cost_usd must be non-negative")
     return profile
+
+
+def _load_provider_specs(root: Path | None = None):
+    from ai_orchestrator.providers import load_provider_specs
+
+    return load_provider_specs(root)
 
 
 def validate_configuration(
@@ -265,4 +274,99 @@ def validate_configuration(
         "role_count": len(roles),
         "gate_profile_count": len(gates),
         "errors": errors,
+        "warnings": configuration_warnings(profile_name, root),
     }
+
+
+# Un modelo declara en `roles` para que sirve, y roles.toml declara a quien
+# llama para cada rol. Nadie comparaba las dos listas, y por eso los cuatro
+# modelos de Abacus podian anunciarse aptos para arquitectura o revision sin
+# aparecer en ningun rol: el enrutador no podia elegirlos jamas y la
+# configuracion se veia perfectamente sana.
+CREDENTIAL_EXPIRY_WARNING_DAYS = 14
+
+
+def configuration_warnings(
+    profile_name: str, root: Path | None = None
+) -> list[dict[str, str]]:
+    """Report reachability and expiry problems that are not hard errors."""
+
+    from datetime import UTC, date, datetime
+
+    models = load_models(root)
+    roles = load_roles(root)
+    profile = load_profile(profile_name, root)
+    warnings: list[dict[str, str]] = []
+
+    routed: dict[str, set[str]] = {}
+    for role in roles.values():
+        for model_id in role.models:
+            routed.setdefault(model_id, set()).add(role.name)
+
+    for model in sorted(models.values(), key=lambda row: row.id):
+        assigned = routed.get(model.id, set())
+        if not assigned:
+            warnings.append(
+                {
+                    "code": "MODEL_NOT_ROUTABLE",
+                    "model": model.id,
+                    "detail": "declared in models.toml but listed in no role",
+                }
+            )
+        else:
+            for role_name in sorted(set(model.roles) - assigned):
+                warnings.append(
+                    {
+                        "code": "DECLARED_ROLE_NOT_ROUTED",
+                        "model": model.id,
+                        "detail": f"declares role {role_name} but that role does "
+                        "not list it",
+                    }
+                )
+        if model.id not in profile.allowed_models:
+            warnings.append(
+                {
+                    "code": "MODEL_NOT_ALLOWED_BY_PROFILE",
+                    "model": model.id,
+                    "detail": f"absent from allowed_models of profile {profile.name}",
+                }
+            )
+        # Una promocion que vence se lleva por delante al primer candidato de
+        # su rol sin avisar. Catorce dias dan margen para reordenar.
+        if model.available_until:
+            try:
+                expiry = date.fromisoformat(model.available_until)
+            except ValueError:
+                warnings.append(
+                    {
+                        "code": "UNREADABLE_AVAILABLE_UNTIL",
+                        "model": model.id,
+                        "detail": f"available_until is not a date: "
+                        f"{model.available_until}",
+                    }
+                )
+                continue
+            remaining = (expiry - datetime.now(UTC).date()).days
+            if remaining <= CREDENTIAL_EXPIRY_WARNING_DAYS:
+                warnings.append(
+                    {
+                        "code": "AVAILABILITY_EXPIRING",
+                        "model": model.id,
+                        "detail": f"available_until {model.available_until} is "
+                        f"{remaining} days away",
+                    }
+                )
+
+    known = set(models)
+    for provider in _load_provider_specs(root).values():
+        for alias in provider.models:
+            if alias not in known:
+                warnings.append(
+                    {
+                        "code": "PROVIDER_ALIAS_WITHOUT_MODEL",
+                        "model": alias,
+                        "detail": f"provider {provider.id} advertises an id that "
+                        "models.toml does not define",
+                    }
+                )
+    return warnings

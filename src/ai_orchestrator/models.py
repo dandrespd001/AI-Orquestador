@@ -340,6 +340,12 @@ class Profile:
     capability_packages: tuple[str, ...] = ()
     extensions: tuple[str, ...] = ()
     architect_model: str | None = None
+    # Sensibilidad maxima que se permite salir por una ruta web gratuita. Con
+    # "public" solo pasan tareas publicas en repositorio publico, que era el
+    # comportamiento unico hasta ahora. Con "internal" se acepta ademas trabajo
+    # interno en repositorio privado; confidential, secrets, financial_control
+    # y deployment siguen fuera en cualquier caso.
+    web_free_max_sensitivity: str = "public"
 
 
 @dataclass(frozen=True)

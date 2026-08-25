@@ -68,9 +68,13 @@ class ContractsAndRoutingTests(unittest.TestCase):
                 if model.trust_tier == "official_subscription"
             )
         )
+        # 2026-08-25: el Director abrio el trabajo interno a las rutas
+        # gratuitas. El invariante deja de ser "solo publico" y pasa a ser el
+        # que de verdad protege: una ruta no oficial no ve nunca nada por
+        # encima de interno.
         self.assertTrue(
             all(
-                model.max_sensitivity == "public"
+                model.max_sensitivity in {"public", "internal"}
                 for model in models.values()
                 if model.trust_tier == "web_free"
             )
@@ -86,6 +90,10 @@ class ContractsAndRoutingTests(unittest.TestCase):
         )
 
     def test_tests_route_to_guarded_deepseek_writer_without_fallback(self) -> None:
+        # 2026-08-25: con las rutas gratuitas abiertas al trabajo interno, el
+        # rol tests lo encabeza gemini-free-fast para conservar cuota. DeepSeek
+        # sigue siendo el escritor que cubre todo lo que la ruta gratuita no
+        # puede tomar, y es esa garantia la que se ancla aqui.
         decision = select_route(
             self.task(
                 write_mode="validated_patch",
@@ -95,6 +103,7 @@ class ContractsAndRoutingTests(unittest.TestCase):
             load_models(),
             load_roles(),
             load_profile("default"),
+            pin="deepseek-v4-flash",
         )
         self.assertEqual("deepseek-v4-flash", decision.selected_model)
         self.assertEqual("qwen_omniroute_cli", decision.transport)
@@ -191,23 +200,40 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertEqual("web_free", decision.trust_tier)
         self.assertTrue(decision.auto_execute)
 
-    def test_web_free_model_requires_public_repository_and_public_task(self) -> None:
-        decision = select_route(
-            self.task(
-                sensitivity="public",
-                write_mode="validated_patch",
-                allowed_write_paths=["tests"],
-                gate_profile="python-unittest",
-            ),
-            load_models(),
-            load_roles(),
-            load_profile("default"),
-        )
-        self.assertEqual("deepseek-v4-flash", decision.selected_model)
+    def test_web_free_gate_has_two_modes_and_never_leaks_confidential(self) -> None:
+        def route(profile_name: str, sensitivity: str):
+            return select_route(
+                self.task(
+                    sensitivity=sensitivity,
+                    write_mode="validated_patch",
+                    allowed_write_paths=["tests"],
+                    gate_profile="python-unittest",
+                ),
+                load_models(),
+                load_roles(),
+                replace(load_profile(profile_name), repo_root=None),
+            )
+
+        # Modo abierto (default): sale trabajo publico e interno aunque el
+        # repositorio sea privado.
+        for sensitivity in ("public", "internal"):
+            with self.subTest(sensitivity=sensitivity):
+                decision = route("default", sensitivity)
+                self.assertEqual("gemini-free-fast", decision.selected_model)
+
+        # Modo estricto (algoritmic, el repositorio de trading): alli la ruta
+        # gratuita esta fuera de allowed_models, y esa puerta corta antes que
+        # la sensibilidad. La denegacion por proveedor la respalda detras.
+        strict = route("algoritmic", "internal")
+        self.assertEqual("profile_denied", strict.unavailable["gemini-free-fast"])
+
+        # Lo que ningun modo deja salir.
+        confidential = route("default", "confidential")
         self.assertEqual(
-            "web_free_requires_public_repository",
-            decision.unavailable["gemini-free-fast"],
+            "web_free_sensitivity_not_allowed",
+            confidential.unavailable["gemini-free-fast"],
         )
+        self.assertNotEqual("gemini-free-fast", confidential.selected_model)
 
     def test_chunsa_profile_and_long_gate_are_valid(self) -> None:
         report = validate_configuration("chunsa")

@@ -60,3 +60,4 @@ allow_paid_routes = false
 max_marginal_cost_usd = 0.0
 capability_packages = ["games"]
 extensions = []
+web_free_max_sensitivity = "internal"

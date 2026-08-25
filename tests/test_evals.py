@@ -30,9 +30,12 @@ class RoutingEvalTests(unittest.TestCase):
                         "input_paths": ["test.py"],
                         "output_contract": "unified_diff",
                     },
+                    # 2026-08-25: con las rutas gratuitas abiertas al trabajo
+                    # interno, el rol tests lo encabeza la ruta verificada de
+                    # Gemini y conserva cuota de suscripcion.
                     "expected": {
                         "status": "READY",
-                        "selected_model": "deepseek-v4-flash",
+                        "selected_model": "gemini-free-fast",
                         "transport": "qwen_omniroute_cli",
                     },
                 }
