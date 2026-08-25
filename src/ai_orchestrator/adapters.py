@@ -29,6 +29,7 @@ from ai_orchestrator.writer import (
     WorktreeTransaction,
     WriterError,
     gates_passed,
+    patch_repair_prompt,
     repair_prompt,
     run_gates,
 )
@@ -751,9 +752,29 @@ def execute(
                         break
 
                     if patch_transport:
-                        transaction.apply_candidate_patch(
-                            _qwen_result_text(outcome.stdout)
-                        )
+                        try:
+                            transaction.apply_candidate_patch(
+                                _qwen_result_text(outcome.stdout)
+                            )
+                        except WriterError as exc:
+                            # Un fallo de gates se reintenta y uno de sintaxis
+                            # del diff no, cuando es el mas facil de corregir:
+                            # basta devolverle al modelo la queja de git. Como
+                            # apply_candidate_patch hace `apply --check` antes
+                            # de aplicar, el worktree sigue limpio y reintentar
+                            # es seguro.
+                            if (
+                                exc.code not in {"GIT_ERROR", "MALFORMED_PATCH"}
+                                or repairs >= task.max_repairs
+                            ):
+                                raise
+                            repairs += 1
+                            writer_input = _writer_prompt(
+                                task,
+                                patch_repair_prompt(prompt, str(exc)),
+                                patch_only=True,
+                            )
+                            continue
 
                     transaction.discard_tool_state(
                         TOOL_STATE_DIRECTORIES.get(str(decision.transport), ())

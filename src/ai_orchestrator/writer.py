@@ -423,6 +423,25 @@ def gates_passed(outcomes: tuple[GateOutcome, ...], expected_count: int) -> bool
     )
 
 
+def patch_repair_prompt(task_prompt: bytes, detail: str) -> bytes:
+    """Send a rejected diff back with git's own complaint.
+
+    El detalle lo escribe git, no el modelo: es una queja sobre la sintaxis del
+    diff, no contenido del repositorio, y es justo lo que hace falta para que
+    la segunda pasada salga bien.
+    """
+
+    return (
+        task_prompt
+        + b"\n\nThe previous answer was not a diff git could apply. "
+        + f"git said: {detail}\n".encode()
+        + b"Answer with a unified diff and nothing else: no prose, no markdown "
+        b"fences. Every hunk header must carry correct line counts, every "
+        b"context line must start with a space, and the file must end with a "
+        b"newline."
+    )
+
+
 def repair_prompt(task_prompt: bytes, outcomes: tuple[GateOutcome, ...]) -> bytes:
     failure = outcomes[-1] if outcomes else None
     detail = failure.output if failure else "No deterministic gate was configured."
