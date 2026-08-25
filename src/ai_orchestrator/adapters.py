@@ -14,10 +14,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ai_orchestrator.abacus import AbacusDelegator
 from ai_orchestrator.credentials import minimax_runtime_key, omniroute_runtime_key
 from ai_orchestrator.kimi_acp import AcpError, run_kimi_acp
 from ai_orchestrator.models import (
     NATIVE_WRITER_PROFILES,
+    ContractError,
     RouteDecision,
     RunResult,
     TaskSpec,
@@ -352,6 +354,69 @@ def _writer_prompt(task: TaskSpec, prompt: bytes, *, patch_only: bool = False) -
     return policy.encode("utf-8") + prompt
 
 
+# Abacus corre en un directorio vacio desechable con --disallowed-tools "*",
+# asi que nunca ve el repositorio. Por eso models.toml lo mantenia fuera de
+# roles.toml: enrutarlo sin mas producia HANDOFF_REQUIRED. Para que la
+# suscripcion sirva de algo en el enrutador, el contexto viaja dentro del
+# prompt en lugar de esperar que el modelo lea ficheros.
+MAX_ABACUS_CONTEXT_BYTES = 60_000
+
+
+def _abacus_context(task: TaskSpec, prompt: bytes) -> str:
+    repo = Path(task.repo).resolve()
+    parts = [prompt.decode("utf-8", errors="replace")]
+    budget = MAX_ABACUS_CONTEXT_BYTES
+    for relative in task.input_paths:
+        candidate = (repo / relative).resolve()
+        if not candidate.is_relative_to(repo) or not candidate.is_file():
+            continue
+        try:
+            body = candidate.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            # Un binario no se puede inlinear; decirlo es mejor que omitirlo.
+            parts.append(f"\n\n--- {relative} (binary, not inlined) ---")
+            continue
+        chunk = body[:budget]
+        budget -= len(chunk)
+        truncated = " (truncated)" if len(chunk) < len(body) else ""
+        parts.append(f"\n\n--- {relative}{truncated} ---\n{chunk}")
+        if budget <= 0:
+            break
+    return "".join(parts)
+
+
+def _run_abacus(
+    task: TaskSpec,
+    decision: RouteDecision,
+    *,
+    prompt: bytes,
+    cwd: Path,
+) -> tuple[ProcessOutcome, str | None, bool]:
+    if task.write_mode != "read_only":
+        # Los modelos de Abacus declaran capabilities = ["read"], asi que el
+        # enrutador ya los descarta antes de llegar aqui. Esto es el cinturon.
+        raise AdapterError(
+            "HANDOFF_REQUIRED", "Abacus routes are read-only by contract"
+        )
+    requested = str(decision.requested_route_model)
+    try:
+        payload = AbacusDelegator().delegate(
+            prompt=_abacus_context(task, prompt),
+            task_type=str(task.task_type),
+            model=requested,
+            sensitivity=str(task.sensitivity),
+            timeout_seconds=max(10, min(600, int(task.timeout_seconds))),
+        )
+    except (ContractError, RuntimeError) as exc:
+        return ProcessOutcome(1, b"", str(exc).encode("utf-8")), None, False
+    reported = str(payload.get("model") or "")
+    return (
+        ProcessOutcome(0, str(payload.get("result", "")).encode("utf-8"), b""),
+        reported,
+        reported == requested,
+    )
+
+
 def _run_once(
     task: TaskSpec,
     decision: RouteDecision,
@@ -424,6 +489,8 @@ def _run_once(
             decision.selected_model,
         }
         return ProcessOutcome(0, envelope, b""), reported_model, provenance
+    if decision.transport == "abacus_cli":
+        return _run_abacus(task, decision, prompt=prompt, cwd=cwd)
     command = _command(task, decision, task.prompt_path() or cwd)
     environment = _minimal_environment(str(decision.transport))
     if decision.transport == "kimi_cli":
