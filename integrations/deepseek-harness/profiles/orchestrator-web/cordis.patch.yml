@@ -1,0 +1,51 @@
+# Full interactive Web surface. The outer systemd sandbox owns workspace scope.
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: !!js process.cwd()
+
+- id: approval
+  config:
+    policy: ask
+
+- id: tool-bash
+  disabled: false
+
+- id: tool-fs
+  disabled: false
+
+- id: tool-fs-search
+  disabled: false
+  config:
+    sampleOverCapGlobResults: false
+
+- id: agent-instructions
+  disabled: false
+  config:
+    maxBytes: 32768
+    maxSourceBytes: 131072
+    instructionFileCandidates: [AGENTS.md]
+    localInstructionFileCandidates: [AGENTS.local.md]
+
+- id: skill-filesystem
+  disabled: false
+
+- id: tool-skill
+  disabled: false
+
+- id: compaction-basic
+  disabled: false
+
+- id: command-compact
+  disabled: false
+
+- id: tool-todo
+  disabled: false
+
+- id: tool-goal
+  disabled: false
+
+- id: tool-str-replace-editor
+  disabled: false
+  config:
+    maxOutputChars: 16000

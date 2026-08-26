@@ -10,14 +10,21 @@ allowed_models = [
   "deepseek-v4-flash",
   "MiniMax-M3",
   "kimi-official",
+  "fx-glm-5.2-promo",
   "local-qwen36-agent",
   "gemini-free-fast",
   "qwen-web-max",
   "kimi-free-code",
   "kat-coder-free",
+  "abacus-grok-4.6",
+  "abacus-qwen3.8-max",
 ]
 deny_providers = ["huggingchat", "zenmux", "openrouter", "qwen-web", "gemini-web"]
 protected_path_prefixes = [".env", ".git", ".codex", ".claude", ".agents", ".kimi-code"]
 deterministic_gates = []
 minimax_mode = "direct"
 public_repository = false
+allow_paid_routes = false
+max_marginal_cost_usd = 0.0
+capability_packages = []
+extensions = []

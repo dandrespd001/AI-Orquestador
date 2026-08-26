@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -51,13 +50,13 @@ def response_for(path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any
 class MockHandler(BaseHTTPRequestHandler):
     server_version = "AIOrchestratorMock/1"
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path in {"/health", "/healthz"}:
             self._json(200, {"status": "ok"})
             return
         self._json(404, {"error": {"message": "not found"}})
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if self.path not in {"/v1/chat/completions", "/v1/responses"}:
             self._json(404, {"error": {"message": "not found"}})
             return
@@ -67,8 +66,8 @@ class MockHandler(BaseHTTPRequestHandler):
                 raise ValueError("invalid length")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
-                raise ValueError("request must be an object")
-        except (ValueError, json.JSONDecodeError):
+                raise TypeError("request must be an object")
+        except (TypeError, ValueError, json.JSONDecodeError):
             self._json(400, {"error": {"message": "invalid JSON"}})
             return
         status, response = response_for(self.path, payload)

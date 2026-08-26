@@ -1,0 +1,19 @@
+{
+  "name": "chunsa-orchestration",
+  "version": "0.1.0",
+  "description": "Strict CHUNSA task routing, isolated writers, and deterministic acceptance.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Chunsa Orchestration",
+    "shortDescription": "Route and verify CHUNSA tasks.",
+    "longDescription": "Adds the CHUNSA orchestration skill and its strict profile-bound MCP server.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": ["skills", "mcp"],
+    "defaultPrompt": "Use the CHUNSA orchestration policy for this repository task."
+  },
+  "mcpServers": "./.mcp.json"
+}

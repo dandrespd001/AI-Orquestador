@@ -26,6 +26,67 @@ class _Response:
 
 
 class PatchApiTests(unittest.TestCase):
+    @patch("ai_orchestrator.patch_api.deepseek_runtime_key", return_value="key")
+    @patch("ai_orchestrator.patch_api.urllib.request.urlopen")
+    def test_deepseek_direct_patch_uses_official_endpoint(self, urlopen, _runtime_key) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            (repo / "src").mkdir()
+            (repo / "src" / "value.txt").write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+            task = TaskSpec.from_mapping(
+                {
+                    "repo": str(repo),
+                    "task_type": "tests",
+                    "sensitivity": "internal",
+                    "write_mode": "validated_patch",
+                    "allowed_write_paths": ["src"],
+                }
+            )
+            decision = RouteDecision(
+                schema_version=1,
+                decision_id="deepseek-direct",
+                task_id=task.task_id,
+                profile="default",
+                status="READY",
+                selected_model="deepseek-v4-flash",
+                requested_route_model="deepseek-v4-flash",
+                provider="deepseek",
+                family="deepseek",
+                transport="qwen_deepseek_cli",
+                reviewer_model=None,
+                alternatives=(),
+                unavailable={},
+                auto_execute=True,
+                approval_required=False,
+                reason="eligible",
+                context_sha256=task.context_sha256(),
+                write_mode=task.write_mode,
+                trust_tier="official_subscription",
+                execution_profile="patch_api_writer",
+            )
+            urlopen.return_value = _Response(
+                {
+                    "model": "deepseek-v4-flash",
+                    "choices": [
+                        {"message": {"content": "diff --git a/src/value.txt b/src/value.txt"}}
+                    ],
+                }
+            )
+
+            outcome = generate_patch(task, decision, worktree=repo, prompt=b"bounded")
+
+            request = urlopen.call_args.args[0]
+            payload = json.loads(request.data)
+            self.assertEqual(
+                "https://api.deepseek.com/chat/completions", request.full_url
+            )
+            self.assertEqual("Bearer key", request.get_header("Authorization"))
+            self.assertEqual("deepseek-v4-flash", payload["model"])
+            self.assertNotIn("key", request.full_url)
+            self.assertEqual("deepseek-v4-flash", outcome.reported_model)
+
     @patch("ai_orchestrator.patch_api.omniroute_runtime_key", return_value="key")
     @patch("ai_orchestrator.patch_api.urllib.request.urlopen")
     def test_omniroute_patch_receives_only_bounded_context(self, urlopen, runtime_key) -> None:
@@ -85,12 +146,77 @@ class PatchApiTests(unittest.TestCase):
             outcome = generate_patch(task, decision, worktree=repo, prompt=b"bounded")
 
             request = urlopen.call_args.args[0]
+            payload = json.loads(request.data)
             body = request.data.decode("utf-8")
             self.assertIn("src/value.txt", body)
             self.assertIn("old", body)
             self.assertNotIn("outside.txt", body)
             self.assertNotIn("secret", body)
+            self.assertEqual(task.max_output_tokens, payload["max_tokens"])
             self.assertEqual("ds/deepseek-v4-flash", outcome.reported_model)
+
+    @patch("ai_orchestrator.patch_api.minimax_runtime_key", return_value="key")
+    @patch("ai_orchestrator.patch_api.urllib.request.urlopen")
+    def test_minimax_uses_responses_api_without_retention(self, urlopen, _runtime_key) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            (repo / "src").mkdir()
+            (repo / "src" / "value.txt").write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+            task = TaskSpec.from_mapping(
+                {
+                    "repo": str(repo),
+                    "task_type": "docs",
+                    "sensitivity": "internal",
+                    "write_mode": "validated_patch",
+                    "allowed_write_paths": ["src"],
+                }
+            )
+            decision = RouteDecision(
+                schema_version=1,
+                decision_id="minimax-decision",
+                task_id=task.task_id,
+                profile="default",
+                status="READY",
+                selected_model="MiniMax-M3",
+                requested_route_model="MiniMax-M3",
+                provider="minimax",
+                family="minimax",
+                transport="qwen_minimax_cli",
+                reviewer_model=None,
+                alternatives=(),
+                unavailable={},
+                auto_execute=True,
+                approval_required=False,
+                reason="eligible",
+                context_sha256=task.context_sha256(),
+                write_mode=task.write_mode,
+                trust_tier="official_subscription",
+                execution_profile="patch_api_writer",
+            )
+            urlopen.return_value = _Response(
+                {
+                    "model": "MiniMax-M3",
+                    "status": "completed",
+                    "output_text": "diff --git a/src/value.txt b/src/value.txt",
+                }
+            )
+
+            outcome = generate_patch(task, decision, worktree=repo, prompt=b"bounded")
+
+            request = urlopen.call_args.args[0]
+            payload = json.loads(request.data)
+            self.assertEqual("https://api.minimax.io/v1/responses", request.full_url)
+            self.assertEqual("Bearer key", request.get_header("Authorization"))
+            self.assertEqual("MiniMax-M3", payload["model"])
+            self.assertIn("bounded", payload["input"])
+            self.assertEqual(
+                task.max_output_tokens, payload["max_output_tokens"]
+            )
+            self.assertFalse(payload["store"])
+            self.assertNotIn("messages", payload)
+            self.assertEqual("MiniMax-M3", outcome.reported_model)
 
 
 if __name__ == "__main__":

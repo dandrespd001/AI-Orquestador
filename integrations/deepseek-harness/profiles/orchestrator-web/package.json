@@ -1,0 +1,17 @@
+{
+  "name": "ai-orchestrator-dsh-profile-web",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@ai-orchestrator/dsh-bundle": "file:../../bundle"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@ai-orchestrator/dsh-bundle"
+      ]
+    }
+  }
+}

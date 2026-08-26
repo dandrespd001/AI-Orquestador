@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+orchestrator_data_root="${XDG_DATA_HOME:-$HOME/.local/share}/ai-orchestrator"
+export AI_ORCHESTRATOR_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/ai-orchestrator"
+export AI_ORCHESTRATOR_SOURCE_CONFIG="$orchestrator_data_root/runtime/config"
+export AI_ORCHESTRATOR_PYTHON="$orchestrator_data_root/runtime/venv/bin/python"
+export AI_ORCHESTRATOR_SKILLS_DIR="$orchestrator_data_root/skills"
+exec "$orchestrator_data_root/runtime/venv/bin/ai-orchestrator" "$@"

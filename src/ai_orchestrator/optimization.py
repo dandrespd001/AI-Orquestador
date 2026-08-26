@@ -12,7 +12,6 @@ from typing import Any
 
 from ai_orchestrator.models import ContractError
 
-
 DSPY_VERSION = "3.3.0"
 ALLOWED_OPTIMIZERS = {"BootstrapFewShot", "MIPROv2"}
 ALLOWED_ROLES = {"tests", "docs", "review"}

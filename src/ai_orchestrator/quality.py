@@ -9,12 +9,12 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from ai_orchestrator.benchmark import atomic_private_json
 from ai_orchestrator.models import ContractError, ensure_private_directory
-
 
 PROMPTFOO_VERSION = "0.122.0"
 PROMPTFOO_SECURITY_ENV = {
@@ -136,8 +136,7 @@ def run_quality_eval(
             cwd=config.parent,
             env=promptfoo_environment(home),
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=timeout_seconds,
             check=False,
         )
@@ -177,8 +176,7 @@ def promptfoo_preflight(project_root: Path) -> dict[str, Any]:
         completed = subprocess.run(
             _network_denied_command([str(binary), "--version"]),
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             env=promptfoo_environment(Path(raw)),
             timeout=30,
             check=False,

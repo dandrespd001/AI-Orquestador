@@ -1,0 +1,64 @@
+# Shared AI-Orchestrator policy layer for both Harness profiles.
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: !!js process.env.DSH_MODEL ?? 'deepseek-v4-flash'
+
+- id: llm-deepseek
+  config:
+    apiKeyEnv: AI_ORCHESTRATOR_HARNESS_CREDENTIAL
+    baseURL: !!js process.env.AI_ORCHESTRATOR_DEEPSEEK_BRIDGE_URL ?? 'http://127.0.0.1:20129'
+    thinking: enabled
+    reasoningEffort: high
+    streamIdleTimeoutMs: 300000
+    models:
+      - id: deepseek-v4-pro
+        name: DeepSeek V4 Pro
+      - id: deepseek-v4-flash
+        name: DeepSeek V4 Flash
+
+- id: llm-pi-ai
+  disabled: true
+
+- id: session-telemetry-otel
+  disabled: true
+
+- id: web
+  disabled: true
+
+- id: web-search-deepseek
+  disabled: true
+
+- id: tool-web
+  disabled: true
+
+- id: skill-filesystem
+  config:
+    providerName: ai-orchestrator
+    includeDefaultRoots: true
+    customSkillDirs:
+      - !!js process.env.AI_ORCHESTRATOR_SKILLS_DIR
+    watch: false
+    watchFollowSymlinks: false
+
+- insert:
+    - id: mcp-ai-orchestrator
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: ai-orchestrator
+        transport: stdio
+        command: !!js process.env.AI_ORCHESTRATOR_PYTHON ?? 'python3'
+        args: ['-m', 'ai_orchestrator', 'mcp', 'serve', '--profile', 'chunsa']
+        cwd: !!js process.env.AI_ORCHESTRATOR_ROOT
+        env:
+          AI_ORCHESTRATOR_SOCKET: !!js process.env.AI_ORCHESTRATOR_SOCKET
+          AI_ORCHESTRATOR_PROFILE: chunsa
+          AI_ORCHESTRATOR_CONFIG: !!js process.env.AI_ORCHESTRATOR_CONFIG
+          AI_ORCHESTRATOR_SOURCE_CONFIG: !!js process.env.AI_ORCHESTRATOR_SOURCE_CONFIG
+        toolCallTimeoutMs: 60000
+        failOnStartupError: true
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 30000
+          maxAttempts: 5

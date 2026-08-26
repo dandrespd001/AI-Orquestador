@@ -1,0 +1,6 @@
+{
+  "description": "CHUNSA orchestration commands for Kimi ACP.",
+  "name": "chunsa-orchestration",
+  "skills": "./skills/",
+  "version": "0.2.0"
+}

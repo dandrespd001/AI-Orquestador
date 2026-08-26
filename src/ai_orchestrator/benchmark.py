@@ -16,7 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -197,11 +197,12 @@ def _request(target: GatewayTarget, scenario: BenchmarkScenario, timeout: float)
             total = (time.perf_counter_ns() - start) / 1_000_000
             status = int(response.status)
     except urllib.error.HTTPError as exc:
-        first_byte = (time.perf_counter_ns() - start) / 1_000_000
-        body = exc.read()
-        total = (time.perf_counter_ns() - start) / 1_000_000
-        status = int(exc.code)
-    except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError) as exc:
+        with exc:
+            first_byte = (time.perf_counter_ns() - start) / 1_000_000
+            body = exc.read()
+            total = (time.perf_counter_ns() - start) / 1_000_000
+            status = int(exc.code)
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
         elapsed = (time.perf_counter_ns() - start) / 1_000_000
         return Observation(None, elapsed, elapsed, 0, None, None, type(exc).__name__)
 
@@ -256,7 +257,14 @@ def run_gateway_benchmark(manifest: Path) -> dict[str, Any]:
             for _ in range(warmups):
                 _request(target, scenario, timeout)
             with ThreadPoolExecutor(max_workers=scenario.concurrency) as pool:
-                rows = list(pool.map(lambda _: _request(target, scenario, timeout), range(repetitions)))
+                rows = list(
+                    pool.map(
+                        lambda _, active_target=target, active_scenario=scenario: _request(
+                            active_target, active_scenario, timeout
+                        ),
+                        range(repetitions),
+                    )
+                )
             results.append(_summarize(target, scenario, rows))
     target_gates: list[dict[str, Any]] = []
     required_providers = {"deepseek", "moonshot", "minimax"}

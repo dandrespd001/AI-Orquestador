@@ -1,0 +1,31 @@
+[Unit]
+Description=AI Orchestrator private Harness broker
+ConditionPathExists=%h/.local/bin/ai-orchestrator
+
+[Service]
+Type=simple
+UMask=0077
+Environment=AI_ORCHESTRATOR_CONFIG=%h/.config/ai-orchestrator
+Environment=AI_ORCHESTRATOR_SOURCE_CONFIG=%h/.local/share/ai-orchestrator/runtime/config
+ExecStart=%h/.local/bin/ai-orchestrator broker-serve
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=%h/.config/ai-orchestrator
+ReadWritePaths=%h/.local/share/ai-orchestrator
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=default.target

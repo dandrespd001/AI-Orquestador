@@ -11,6 +11,14 @@ status = "available"
 roles = ["architecture", "implementation", "review", "docs", "tests", "bounded_cpp", "determinism"]
 max_sensitivity = "financial_control"
 max_concurrency = 2
+plan = "pro_5x"
+billing_mode = "included_quota"
+input_per_mtok_usd = 5.0
+output_per_mtok_usd = 30.0
+economics_source = "OpenAI pricing"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
+orchestrator_quota_fraction = 0.15
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
@@ -26,6 +34,14 @@ status = "available"
 roles = ["implementation", "review", "statistics", "security"]
 max_sensitivity = "financial_control"
 max_concurrency = 2
+plan = "pro_5x"
+billing_mode = "included_quota"
+input_per_mtok_usd = 2.0
+output_per_mtok_usd = 12.0
+economics_source = "OpenAI pricing"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
+orchestrator_quota_fraction = 0.15
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
@@ -41,6 +57,14 @@ status = "available"
 roles = ["implementation", "review", "godot_ui"]
 max_sensitivity = "financial_control"
 max_concurrency = 1
+plan = "pro_5x"
+billing_mode = "included_quota"
+input_per_mtok_usd = 0.2
+output_per_mtok_usd = 1.2
+economics_source = "OpenAI pricing"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
+orchestrator_quota_fraction = 0.15
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
@@ -56,6 +80,11 @@ status = "available"
 roles = ["architecture", "review", "long_context", "security", "determinism"]
 max_sensitivity = "financial_control"
 max_concurrency = 1
+plan = "claude_pro"
+billing_mode = "included_quota"
+economics_source = "Claude Code plan"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
@@ -71,24 +100,38 @@ status = "available"
 roles = ["implementation", "review", "docs", "tests", "godot_ui", "bounded_cpp"]
 max_sensitivity = "financial_control"
 max_concurrency = 2
+plan = "claude_pro"
+billing_mode = "included_quota"
+economics_source = "Claude Code plan"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "native_writer"
 
 [[models]]
-# Sondeado vivo el 2026-08-14: ds/deepseek-v4-pro responde en 2043 ms.
+# El perfil oficial directo de Qwen fue validado el 2026-08-20.
 # Coexiste con Flash a proposito: Pro para razonamiento acotado y auditoria,
 # Flash para volumen. El enrutador elige por rol, no por preferencia.
 id = "deepseek-v4-pro"
+rollout_stage = "candidate"
+candidate_since = "2026-08-20"
 family = "deepseek"
 provider = "deepseek"
-transport = "qwen_omniroute_cli"
-route_model = "ds/deepseek-v4-pro"
+transport = "deepseek_harness"
+route_model = "deepseek-v4-pro"
 official = true
-status = "available"
+status = "quota_unavailable"
 roles = ["review", "bounded_cpp", "implementation", "statistics"]
 max_sensitivity = "internal"
 max_concurrency = 2
+plan = "prepaid_api_balance_only"
+billing_mode = "prepaid_balance_only"
+input_per_mtok_usd = 0.435
+output_per_mtok_usd = 0.87
+economics_source = "DeepSeek official pricing"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 # Promovido a escritor nativo acotado el 2026-08-14 con canario 5/5
@@ -101,15 +144,24 @@ execution_profile = "native_patch_writer"
 
 [[models]]
 id = "deepseek-v4-flash"
+rollout_stage = "candidate"
+candidate_since = "2026-08-20"
 family = "deepseek"
 provider = "deepseek"
-transport = "qwen_omniroute_cli"
-route_model = "ds/deepseek-v4-flash"
+transport = "deepseek_harness"
+route_model = "deepseek-v4-flash"
 official = true
-status = "available"
+status = "quota_unavailable"
 roles = ["tests", "boilerplate", "docs", "implementation", "bounded_cpp"]
 max_sensitivity = "internal"
 max_concurrency = 3
+plan = "prepaid_api_balance_only"
+billing_mode = "prepaid_balance_only"
+input_per_mtok_usd = 0.14
+output_per_mtok_usd = 0.28
+economics_source = "DeepSeek official pricing"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 # Promovido a escritor nativo acotado el 2026-08-18 con canario 5/5
@@ -125,6 +177,8 @@ execution_profile = "native_patch_writer"
 
 [[models]]
 id = "MiniMax-M3"
+rollout_stage = "candidate"
+candidate_since = "2026-08-20"
 family = "minimax"
 provider = "minimax"
 transport = "qwen_minimax_cli"
@@ -138,16 +192,25 @@ status = "available"
 roles = ["long_context", "docs", "boilerplate", "bulk_refactor"]
 max_sensitivity = "internal"
 max_concurrency = 1
+plan = "plus_20"
+billing_mode = "included_quota"
+economics_source = "MiniMax Token Plan"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
+context_window = 1000000
+quality_score = 0.85
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "patch_api_writer"
 
 [[models]]
 id = "kimi-official"
+rollout_stage = "candidate"
+candidate_since = "2026-08-20"
 family = "moonshot-kimi"
 provider = "moonshot"
 transport = "kimi_cli"
-route_model = "kimi-code/k3"
+route_model = "kimi-code/k3-256k"
 official = true
 # Cuota confirmada por el Director el 2026-08-18 y sondeada en vivo (kimi 0.37.0
 # responde). Promovido con canario 5/5, promotion_ready=true
@@ -157,9 +220,129 @@ status = "available"
 roles = ["long_context", "research", "implementation", "godot_ui"]
 max_sensitivity = "internal"
 max_concurrency = 1
+plan = "moderato_99"
+billing_mode = "included_quota"
+economics_source = "Kimi Code membership"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "verified"
+context_window = 256000
+quality_score = 0.85
 trust_tier = "official_subscription"
 capabilities = ["read", "write", "tools"]
 execution_profile = "kimi_acp_writer"
+
+# Modelos observados en la cuenta Abacus autenticada el 2026-08-20. Son de
+# primera clase para inventario y para `orchestrator_delegate_abacus`, pero no
+# aparecen en roles.toml ni en perfiles: el enrutador core no puede seleccionarlos
+# por accidente ni tratarlos como escritores con acceso al repositorio.
+[[models]]
+id = "abacus-grok-4.6"
+rollout_stage = "candidate"
+candidate_since = "2026-08-20"
+family = "xai-grok"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "Grok 4.6"
+official = true
+status = "available"
+roles = ["architecture", "review", "research", "security"]
+max_sensitivity = "internal"
+max_concurrency = 1
+plan = "abacus_pro_30000_credits"
+billing_mode = "measured_credits"
+economics_source = "Abacus billing FAQ; per-model debit measured per run"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "measured_required"
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.92
+included_quota = true
+marginal_cost_per_million = 0.0
+
+[[models]]
+id = "abacus-qwen3.8-max"
+family = "qwen"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "Qwen3.8 Max"
+official = true
+status = "available"
+roles = ["implementation", "bulk_refactor", "long_context", "tests"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.92
+included_quota = true
+marginal_cost_per_million = 0.0
+
+[[models]]
+id = "abacus-qwen3.8-27b"
+family = "qwen"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "Qwen3.8 27B"
+official = true
+status = "candidate"
+roles = ["tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.51
+included_quota = true
+marginal_cost_per_million = 0.0
+
+[[models]]
+id = "abacus-glm-5.3"
+family = "zai-glm"
+provider = "abacus"
+transport = "abacus_cli"
+route_model = "ZAI GLM 5.3"
+official = true
+status = "candidate"
+roles = ["review", "implementation"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.50
+included_quota = true
+marginal_cost_per_million = 0.0
+
+# FX de Vercel Labs 0.0.4, autenticado por OAuth y observado con
+# zai/glm-5.2 el 2026-08-20. La promoción pública se anuncia hasta alrededor
+# del 2026-09-02; se corta un día antes para que nunca pase a pago por desfase
+# horario o cambio de condiciones. Sólo lectura: los parches siguen usando los
+# writers aislados ya promovidos.
+[[models]]
+id = "fx-glm-5.2-promo"
+family = "zai-glm"
+provider = "fx"
+transport = "fx_cli"
+route_model = "zai/glm-5.2"
+official = true
+status = "available"
+roles = ["review", "research", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+plan = "temporary_free_promotion"
+billing_mode = "included_quota"
+economics_source = "FX promotion"
+economics_verified_at = "2026-08-20T00:00:00+00:00"
+economics_confidence = "temporary"
+trust_tier = "official_subscription"
+capabilities = ["read"]
+execution_profile = "read_only"
+quality_score = 0.82
+included_quota = true
+marginal_cost_per_million = 0.0
+context_window = 1000000
+available_until = "2026-09-01"
 
 # Public/local candidates are intentionally not routable until a five-run
 # writer canary produces promotion_ready=true. Their fixed route IDs come from
@@ -181,6 +364,8 @@ execution_profile = "patch_api_writer"
 
 [[models]]
 id = "gemini-free-fast"
+rollout_stage = "candidate"
+candidate_since = "2026-08-20"
 family = "google-gemini"
 provider = "antigravity"
 transport = "qwen_omniroute_cli"

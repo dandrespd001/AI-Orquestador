@@ -1,0 +1,18 @@
+{
+  "description": "Strict AI-Orchestrator routing and acceptance for CHUNSA.",
+  "mcpServers": {
+    "ai-orchestrator-chunsa": {
+      "args": [
+        "mcp",
+        "serve",
+        "--profile",
+        "chunsa"
+      ],
+      "command": "ai-orchestrator",
+      "type": "stdio"
+    }
+  },
+  "name": "chunsa-orchestration",
+  "skills": "skills",
+  "version": "0.2.0"
+}

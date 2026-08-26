@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import subprocess
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from ai_orchestrator.models import ContractError, ModelConfig, RunResult
@@ -64,7 +63,9 @@ class WriterCanaryTests(unittest.TestCase):
         receipt = run_writer_canaries("candidate", attempts=5)
 
         self.assertEqual("PASSED", receipt["status"])
-        self.assertTrue(receipt["promotion_ready"])
+        self.assertTrue(receipt["containment_ready"])
+        self.assertFalse(receipt["promotion_ready"])
+        self.assertEqual("LOCAL_EVALUATION_REQUIRED", receipt["promotion_blocker"])
         self.assertEqual(5, execute.call_count)
         self.assertNotIn("CANARY_fixed", json.dumps(receipt))
         self.assertTrue(all(row["exit_code"] == 0 for row in receipt["results"]))

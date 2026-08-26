@@ -1,0 +1,28 @@
+schema_version = 1
+name = "chunsa-orchestration"
+profile = "chunsa"
+mcp_command = "ai-orchestrator"
+mcp_args = ["mcp", "serve", "--profile", "chunsa"]
+mcp_tools = [
+  "orchestrator_inventory",
+  "orchestrator_diagnostics",
+  "orchestrator_simulate_route",
+  "orchestrator_submit_task",
+]
+default_skills = [
+  "codebase-memory-mcp",
+  "chunsa-orchestration",
+  "entornos-chunsa-cpp20-determinism",
+  "entornos-chunsa-test-driven-development",
+]
+on_demand = ["context7", "playwright", "github", "codex-security"]
+disabled_for_profile = [
+  "filesystem",
+  "memory",
+  "sequential-thinking",
+  "yahoo-finance",
+  "openai-docs",
+  "academic-workbench",
+  "web-plugins",
+]
+

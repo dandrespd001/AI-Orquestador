@@ -7,8 +7,9 @@ import subprocess
 import tempfile
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ai_orchestrator.models import ensure_private_directory
 

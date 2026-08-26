@@ -1,0 +1,113 @@
+schema_version = 2
+
+[components.deepseek-harness]
+version = "0.1.1-rc.2"
+source = "npm:@deepseek-ai/dsh"
+integrity = "sha512-UP1UIh6q3Gme/yXRn/QL2P8IsVlv8Shpg22TRJIZPsCRWLm4CBiA1MUvXmJAfsOEETBMLAl+xWPtFw6ICsN3wg=="
+install_slot = "deepseek-harness/0.1.1-rc.2"
+active = true
+active_executable = "node_modules/.bin/dsh"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "latest"
+compatibility_tests = ["contracts", "broker", "sessions", "client-catalog"]
+security_tests = ["bubblewrap-escape-regression", "loopback-only", "socket-0600", "secret-redaction"]
+rollback_eligible = true
+
+[components.abacus-cli]
+version = "2.6.9"
+source = "npm:@abacus-ai/cli"
+integrity = "runtime:version-and-lockfile"
+install_slot = "abacus-cli/2.6.9"
+active = true
+active_executable = "node_modules/.bin/abacusai"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "latest"
+compatibility_tests = ["cli-version", "human-login", "quota-status"]
+security_tests = ["no-api-key-argv", "included-credits-only", "no-auto-purchase"]
+rollback_eligible = true
+
+[components.kimi-cli]
+version = "0.38.0"
+source = "official:kimi-code"
+integrity = "runtime:version-and-provider-signature"
+install_slot = "kimi-cli/0.38.0"
+active = true
+active_executable = "bin/kimi"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "stable"
+compatibility_tests = ["oauth-store", "dynamic-model-discovery", "alias-canary"]
+security_tests = ["oauth-token-redaction", "no-global-mcp"]
+rollback_eligible = true
+
+[components.qwen-cli]
+version = "0.22.1"
+source = "official:qwen-code"
+integrity = "sha512-sDki8GaxUA7eEbo1SQNd15TXiP22CMmOpUmfKeDvl+vmyw5sMwX5XJunQ8R4zReRV8z+HIaqqK5u28UX807lhw=="
+install_slot = "qwen-cli/0.22.1"
+active = true
+active_executable = "node_modules/.bin/qwen"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "latest"
+compatibility_tests = ["openai-provider", "bounded-tools"]
+security_tests = ["no-shell", "no-secret-persistence"]
+rollback_eligible = true
+
+[components.opencode-cli]
+version = "1.18.23"
+source = "official:opencode"
+integrity = "runtime:version-and-provider-signature"
+install_slot = "opencode-cli/1.18.23"
+active = true
+active_executable = "bin/opencode"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "stable"
+compatibility_tests = ["profile-config"]
+security_tests = ["official-oauth-store", "no-global-mcp"]
+rollback_eligible = true
+
+[components.codex-cli]
+version = "0.149.1"
+source = "official:openai-codex"
+integrity = "runtime:version-and-provider-signature"
+install_slot = "codex-cli/0.149.1"
+active = true
+active_executable = "bin/codex"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "stable"
+compatibility_tests = ["cli-version", "profile-mcp", "alias-canary"]
+security_tests = ["important-only", "daily-five-cap", "no-auto-purchase"]
+rollback_eligible = true
+
+[components.claude-cli]
+version = "2.1.245"
+source = "official:anthropic-claude-code"
+integrity = "runtime:version-and-provider-signature"
+install_slot = "claude-cli/2.1.245"
+active = true
+active_executable = "bin/claude"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "stable"
+compatibility_tests = ["cli-version", "profile-mcp", "alias-canary"]
+security_tests = ["oauth-token-redaction", "no-auto-purchase"]
+rollback_eligible = true
+
+[components.fx-cli]
+version = "0.0.4"
+source = "github:vercel-labs/fx"
+integrity = "runtime:git-release-checksum"
+install_slot = "fx-cli/0.0.4"
+active = false
+active_executable = "bin/fx"
+auto_update = false
+update_policy = "manual_promote"
+update_channel = "stable"
+compatibility_tests = ["oauth-store", "glm-5.2-model", "json-ask", "no-save"]
+security_tests = ["stdin-prompt", "ask-mode", "no-additional-dirs", "promotion-expiry"]
+rollback_eligible = true

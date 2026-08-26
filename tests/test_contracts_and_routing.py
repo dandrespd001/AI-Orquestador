@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import unittest
@@ -16,7 +15,6 @@ from ai_orchestrator.config import (
 )
 from ai_orchestrator.models import NATIVE_WRITER_PROFILES, ContractError, TaskSpec
 from ai_orchestrator.routing import select_route
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -67,7 +65,7 @@ class ContractsAndRoutingTests(unittest.TestCase):
             if model.trust_tier != "official_subscription" and model.id != "gemini-free-fast"
         ))
 
-    def test_tests_route_to_guarded_deepseek_writer_without_fallback(self) -> None:
+    def test_tests_route_to_codex_handoff_when_deepseek_quota_is_unavailable(self) -> None:
         decision = select_route(
             self.task(
                 write_mode="validated_patch",
@@ -78,19 +76,14 @@ class ContractsAndRoutingTests(unittest.TestCase):
             load_roles(),
             load_profile("default"),
         )
-        self.assertEqual("deepseek-v4-flash", decision.selected_model)
-        self.assertEqual("qwen_omniroute_cli", decision.transport)
-        # 2026-08-18: Flash pasa a `native_patch_writer` (canario 5/5, decision
-        # de coste del Director). El test afirmaba el perfil CONCRETO y se puso
-        # rojo al promoverlo — codificaba el estado, no la propiedad. Lo que de
-        # verdad protege es que un escritor externo NUNCA auto-aplique: eso lo
-        # decide `native_writer` a solas, y Flash no lo es ni debe serlo.
-        self.assertIn(decision.execution_profile, NATIVE_WRITER_PROFILES)
-        self.assertNotEqual("native_writer", decision.execution_profile)
-        self.assertTrue(decision.auto_execute)
+        self.assertEqual("gpt-5.6-sol", decision.selected_model)
+        self.assertEqual("codex_cli", decision.transport)
+        self.assertEqual("HANDOFF_REQUIRED", decision.status)
+        self.assertEqual("quota_unavailable", decision.unavailable["deepseek-v4-flash"])
+        self.assertFalse(decision.auto_execute)
         self.assertFalse(decision.fallback_allowed)
 
-    def test_pin_narrows_the_candidates_to_one_model(self) -> None:
+    def test_pin_to_quota_unavailable_model_fails_closed(self) -> None:
         """Fijar el modelo es lo que permite comparar dos rutas en la misma tarea.
 
         Sin esto, medir a Pro contra Flash exigiria reordenar roles.toml — es
@@ -117,10 +110,12 @@ class ContractsAndRoutingTests(unittest.TestCase):
             profile,
             pin="deepseek-v4-pro",
         )
-        self.assertEqual("deepseek-v4-pro", decision.selected_model)
-        self.assertEqual("native_patch_writer", decision.execution_profile)
-        self.assertIn("pin", decision.reason)
+        self.assertIsNone(decision.selected_model)
+        self.assertEqual("NO_ROUTE", decision.status)
+        self.assertEqual("read_only", decision.execution_profile)
+        self.assertEqual("quota_unavailable", decision.unavailable["deepseek-v4-pro"])
         self.assertEqual("not_pinned", decision.unavailable["deepseek-v4-flash"])
+        self.assertFalse(decision.fallback_allowed)
 
     def test_pin_cannot_widen_past_policy(self) -> None:
         """El anclaje estrecha, nunca concede: un modelo inelegible sigue fuera."""
@@ -185,7 +180,8 @@ class ContractsAndRoutingTests(unittest.TestCase):
             load_roles(),
             load_profile("default"),
         )
-        self.assertEqual("deepseek-v4-flash", decision.selected_model)
+        self.assertEqual("gpt-5.6-sol", decision.selected_model)
+        self.assertEqual("quota_unavailable", decision.unavailable["deepseek-v4-flash"])
         self.assertEqual(
             "web_free_requires_public_repository",
             decision.unavailable["gemini-free-fast"],
@@ -206,7 +202,7 @@ class ContractsAndRoutingTests(unittest.TestCase):
     def test_chunsa_determinism_uses_sol_with_xhigh_effort(self) -> None:
         profile = replace(load_profile("chunsa"), repo_root=str(self.repo))
         decision = select_route(
-            self.task(task_type="determinism"),
+            self.task(task_type="determinism", important=True),
             load_models(),
             load_roles(),
             profile,
@@ -215,7 +211,7 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertEqual("xhigh", decision.reasoning_effort)
         self.assertEqual("xhigh", decision.reviewer_reasoning_effort)
 
-    def test_chunsa_bounded_cpp_uses_deepseek_as_reviewed_patch_writer(self) -> None:
+    def test_chunsa_bounded_cpp_uses_next_eligible_reviewed_writer(self) -> None:
         profile = replace(load_profile("chunsa"), repo_root=str(self.repo))
         decision = select_route(
             self.task(
@@ -228,11 +224,10 @@ class ContractsAndRoutingTests(unittest.TestCase):
             load_roles(),
             profile,
         )
-        self.assertEqual("deepseek-v4-flash", decision.selected_model)
-        # Ver la nota de arriba: se comprueba la propiedad (escribe en el arbol
-        # pero no auto-aplica), no el perfil concreto.
+        self.assertEqual("claude-sonnet", decision.selected_model)
+        self.assertEqual("quota_unavailable", decision.unavailable["deepseek-v4-flash"])
+        self.assertEqual("quota_unavailable", decision.unavailable["deepseek-v4-pro"])
         self.assertIn(decision.execution_profile, NATIVE_WRITER_PROFILES)
-        self.assertNotEqual("native_writer", decision.execution_profile)
         self.assertEqual("gpt-5.6-sol", decision.reviewer_model)
         self.assertEqual("high", decision.reasoning_effort)
         self.assertEqual("xhigh", decision.reviewer_reasoning_effort)

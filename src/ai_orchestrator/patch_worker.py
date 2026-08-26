@@ -15,7 +15,7 @@ def main() -> int:
     try:
         payload = json.loads(sys.stdin.buffer.read(4_000_001))
         if not isinstance(payload, dict):
-            raise ValueError("invalid worker payload")
+            raise TypeError("invalid worker payload")
         task = TaskSpec.from_mapping(payload["task"])
         decision_payload = dict(payload["decision"])
         decision_payload["alternatives"] = tuple(decision_payload.get("alternatives", ()))
@@ -43,7 +43,7 @@ def main() -> int:
         # caller needs to tell a quota apart from a dead credential.
         sys.stderr.write(exc.code)
         return 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - fail-closed process boundary
         # Do not echo provider bodies, prompts, paths or credentials across the
         # subprocess boundary.
         sys.stderr.write(type(exc).__name__)

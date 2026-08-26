@@ -1,0 +1,15 @@
+{
+  "mcp": {
+    "ai-orchestrator-chunsa": {
+      "command": [
+        "ai-orchestrator",
+        "mcp",
+        "serve",
+        "--profile",
+        "chunsa"
+      ],
+      "enabled": true,
+      "type": "local"
+    }
+  }
+}

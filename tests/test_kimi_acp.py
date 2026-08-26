@@ -9,7 +9,6 @@ from pathlib import Path
 
 from ai_orchestrator.kimi_acp import run_kimi_acp
 
-
 FAKE_AGENT = r'''
 import json, sys
 

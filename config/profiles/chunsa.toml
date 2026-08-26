@@ -1,6 +1,8 @@
 schema_version = 1
 name = "chunsa"
+assurance_floor = "high"
 repo_root = "/home/adquiod/Imágenes/Project/CHUNSA001"
+architect_model = "claude-opus"
 public_repository = true
 auto_execute_sensitivities = ["public", "internal"]
 allowed_models = [
@@ -13,11 +15,13 @@ allowed_models = [
   "deepseek-v4-pro",
   "MiniMax-M3",
   "kimi-official",
+  "fx-glm-5.2-promo",
   "local-qwen36-agent",
   "gemini-free-fast",
   "qwen-web-max",
   "kimi-free-code",
   "kat-coder-free",
+  "abacus-grok-4.6",
 ]
 deny_providers = []
 protected_path_prefixes = [
@@ -50,3 +54,22 @@ deterministic_gates = [
   "nice -n 19 ctest --test-dir build-gcc --output-on-failure",
 ]
 minimax_mode = "direct"
+allow_paid_routes = false
+max_marginal_cost_usd = 0.0
+capability_packages = ["games"]
+extensions = []
+workspace_allowlist = [
+  "/home/adquiod/Documentos/AI-Orchestrator",
+  "/home/adquiod/Imágenes/Project/CHUNSA001",
+]
+session_retention_days = 30
+codex_daily_limit = 5
+codex_important_only = true
+worker_normal_max_turns = 100
+worker_normal_max_tools = 200
+worker_normal_timeout_seconds = 3600
+worker_extended_max_turns = 300
+worker_extended_max_tools = 600
+worker_extended_timeout_seconds = 14400
+deepseek_models = ["deepseek-v4-pro", "deepseek-v4-flash"]
+max_writers_per_repo = 1

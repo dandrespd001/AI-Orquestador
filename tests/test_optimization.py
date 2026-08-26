@@ -7,8 +7,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai_orchestrator.models import ContractError
-from ai_orchestrator.optimization import load_prompt_experiment, prompt_optimization_preflight
-
+from ai_orchestrator.optimization import (
+    load_prompt_experiment,
+    prompt_optimization_preflight,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 

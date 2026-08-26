@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import json
 import os
 import pwd
 import sqlite3
 import stat
 import time
+from collections.abc import Iterable
+from contextlib import closing
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ai_orchestrator.models import ensure_private_directory
 
@@ -71,7 +72,7 @@ def _size_tree(path: Path) -> int:
 
 def _sqlite_info(path: Path) -> dict[str, Any]:
     uri = f"file:{path}?mode=ro"
-    with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
+    with closing(sqlite3.connect(uri, uri=True, timeout=1.0)) as connection:
         values = {
             "journal_mode": connection.execute("PRAGMA journal_mode").fetchone()[0],
             "synchronous": connection.execute("PRAGMA synchronous").fetchone()[0],
@@ -177,11 +178,12 @@ def audit_storage() -> dict[str, Any]:
 
     provider_inventory: list[dict[str, Any]] = []
     content_inventory: dict[str, int] = {}
+    content_logging_disabled = False
     omniroute_db = Path.home() / ".omniroute" / "storage.sqlite"
     if omniroute_db.is_file() and not omniroute_db.is_symlink():
         try:
             uri = f"file:{omniroute_db}?mode=ro"
-            with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
+            with closing(sqlite3.connect(uri, uri=True, timeout=1.0)) as connection:
                 provider_inventory = [
                     {"provider": str(row[0]), "active": bool(row[1]), "connections": int(row[2])}
                     for row in connection.execute(
@@ -199,6 +201,20 @@ def audit_storage() -> dict[str, Any]:
                     "OR client_response IS NOT NULL THEN 1 ELSE 0 END), 0) "
                     "FROM request_detail_logs"
                 ).fetchone()
+                observed_logging = {}
+                for namespace, key in OMNIROUTE_PRIVATE_LOG_SETTINGS:
+                    setting = connection.execute(
+                        "SELECT value FROM key_value WHERE namespace=? AND key=?",
+                        (namespace, key),
+                    ).fetchone()
+                    observed_logging[f"{namespace}.{key}"] = (
+                        str(setting[0]) if setting else None
+                    )
+                desired_logging = {
+                    f"{namespace}.{key}": value
+                    for (namespace, key), value in OMNIROUTE_PRIVATE_LOG_SETTINGS.items()
+                }
+                content_logging_disabled = observed_logging == desired_logging
             content_inventory = {
                 "call_logs": int(call_row[0]),
                 "request_body_references": int(call_row[1]),
@@ -224,10 +240,13 @@ def audit_storage() -> dict[str, Any]:
             if content_inventory["request_body_references"] or content_inventory["response_body_references"]:
                 findings.append(
                     StorageFinding(
-                        "high",
+                        "info" if content_logging_disabled else "high",
                         "MODEL_CONTENT_RETENTION",
                         str(omniroute_db),
-                        "request_refs=" + str(content_inventory["request_body_references"])
+                        "historical=true;future_logging_disabled="
+                        + str(content_logging_disabled).lower()
+                        + ";request_refs="
+                        + str(content_inventory["request_body_references"])
                         + ",response_refs=" + str(content_inventory["response_body_references"]),
                     )
                 )
@@ -246,6 +265,7 @@ def audit_storage() -> dict[str, Any]:
         "databases": databases,
         "omniroute_providers": provider_inventory,
         "omniroute_content": content_inventory,
+        "omniroute_content_logging_disabled": content_logging_disabled,
         "age": age,
         "findings": [asdict(item) for item in findings],
     }
@@ -262,7 +282,9 @@ def enforce_official_omniroute_providers(*, apply: bool = False) -> dict[str, An
         "SELECT id, provider FROM provider_connections WHERE is_active=1 "
         f"AND provider NOT IN ({placeholders}) ORDER BY provider, id"
     )
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1.0) as connection:
+    with closing(
+        sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1.0)
+    ) as connection:
         rows = connection.execute(query, tuple(sorted(OFFICIAL_OMNIROUTE_PROVIDERS))).fetchall()
     providers = sorted({str(row[1]) for row in rows})
     result: dict[str, Any] = {
@@ -276,7 +298,7 @@ def enforce_official_omniroute_providers(*, apply: bool = False) -> dict[str, An
     if _client_running("omniroute"):
         raise RuntimeError("client is running: omniroute")
     backup = _private_backup(path)
-    with sqlite3.connect(path, timeout=5.0) as connection:
+    with closing(sqlite3.connect(path, timeout=5.0)) as connection, connection:
         connection.execute("BEGIN IMMEDIATE")
         connection.executemany(
             "UPDATE provider_connections SET is_active=0, updated_at=datetime('now') "
@@ -301,14 +323,16 @@ def disable_omniroute_content_logging(
 
     def read_settings(connection: sqlite3.Connection) -> dict[str, str | None]:
         result: dict[str, str | None] = {}
-        for (namespace, key), _desired in OMNIROUTE_PRIVATE_LOG_SETTINGS.items():
+        for namespace, key in OMNIROUTE_PRIVATE_LOG_SETTINGS:
             row = connection.execute(
                 "SELECT value FROM key_value WHERE namespace=? AND key=?", (namespace, key)
             ).fetchone()
             result[f"{namespace}.{key}"] = str(row[0]) if row else None
         return result
 
-    with sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=2.0) as connection:
+    with closing(
+        sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=2.0)
+    ) as connection:
         before = read_settings(connection)
     desired = {
         f"{namespace}.{key}": value
@@ -319,7 +343,7 @@ def disable_omniroute_content_logging(
         return result
 
     backup = _private_backup(database)
-    with sqlite3.connect(database, timeout=5.0) as connection:
+    with closing(sqlite3.connect(database, timeout=5.0)) as connection, connection:
         connection.execute("PRAGMA busy_timeout=5000")
         connection.execute("BEGIN IMMEDIATE")
         for (namespace, key), value in OMNIROUTE_PRIVATE_LOG_SETTINGS.items():
@@ -362,7 +386,7 @@ def bound_sqlite_journals(*, apply: bool = False) -> dict[str, Any]:
                     row["status"] = "SKIPPED_CLIENT_RUNNING"
             else:
                 backup = _private_backup(path)
-                with sqlite3.connect(path, timeout=5.0) as connection:
+                with closing(sqlite3.connect(path, timeout=5.0)) as connection, connection:
                     connection.execute("PRAGMA journal_size_limit=67108864")
                 after = _sqlite_info(path)
                 row.update({"after": after["journal_size_limit"], "backup": str(backup), "status": "APPLIED"})
@@ -443,7 +467,11 @@ def _private_backup(path: Path) -> Path:
     if destination.exists():
         raise RuntimeError("backup destination already exists")
     source_uri = f"file:{path}?mode=ro"
-    with sqlite3.connect(source_uri, uri=True) as source, sqlite3.connect(destination) as target:
+    with (
+        closing(sqlite3.connect(source_uri, uri=True)) as source,
+        closing(sqlite3.connect(destination)) as target,
+        target,
+    ):
         source.backup(target)
         if target.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise RuntimeError("backup quick_check failed")
@@ -463,7 +491,7 @@ def compact_sqlite(path: Path, client: str) -> dict[str, Any]:
 
     before = _sqlite_info(path)
     backup = _private_backup(path)
-    with sqlite3.connect(path, timeout=5.0) as connection:
+    with closing(sqlite3.connect(path, timeout=5.0)) as connection, connection:
         connection.execute("PRAGMA busy_timeout=5000")
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         connection.execute("PRAGMA journal_size_limit=67108864")

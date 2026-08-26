@@ -1,0 +1,15 @@
+schema_version = 1
+
+[policy]
+allowed_sources = ["github", "private_git", "local", "npm", "pypi", "mcp_stdio", "mcp_http"]
+trust_levels = ["official", "provider_maintained", "community_verified", "community_experimental", "private_local"]
+clients = ["harness", "codex", "claude", "kimi", "qwen", "opencode", "abacus"]
+administrative_profiles = ["admin", "administrative", "harness-admin"]
+high_risk_isolation = "container"
+community_secret_access = false
+automatic_activation = false
+automatic_permission_expansion = false
+arbitrary_shell_default = false
+require_version_or_commit = true
+require_sha256 = true
+require_human_approval = true

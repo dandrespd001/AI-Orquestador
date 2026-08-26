@@ -6,7 +6,6 @@ from pathlib import Path
 
 from ai_orchestrator.config_sync import apply_config_sync, config_sync_status
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -7,6 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai_orchestrator.credentials import (
+    authentication_inventory,
+    deepseek_runtime_key,
+    minimax_runtime_key,
     omniroute_runtime_key,
     private_dotenv_value,
     resolve_credential,
@@ -14,6 +18,90 @@ from ai_orchestrator.credentials import (
 
 
 class CredentialTests(unittest.TestCase):
+    def _qwen_settings(self, root: Path, *, mode: int = 0o600) -> Path:
+        path = root / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "env": {
+                        "DEEPSEEK_API_KEY": "deepseek-profile-secret",
+                        "MINIMAX_API_KEY": "minimax-profile-secret",
+                    },
+                    "modelProviders": {
+                        "openai": [
+                            {
+                                "id": "deepseek-v4-flash",
+                                "baseUrl": "https://api.deepseek.com",
+                                "envKey": "DEEPSEEK_API_KEY",
+                            },
+                            {
+                                "id": "MiniMax-M3",
+                                "baseUrl": "https://api.minimax.io/v1",
+                                "envKey": "MINIMAX_API_KEY",
+                            },
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        path.chmod(mode)
+        return path
+
+    def test_private_qwen_profiles_are_runtime_credential_fallbacks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = self._qwen_settings(root)
+            self.assertEqual(
+                "deepseek-profile-secret",
+                deepseek_runtime_key(
+                    {}, root=root, qwen_settings=settings
+                ),
+            )
+            self.assertEqual(
+                "minimax-profile-secret",
+                minimax_runtime_key(
+                    {}, root=root, qwen_settings=settings
+                ),
+            )
+
+    def test_qwen_profile_fallback_rejects_permissive_or_unexpected_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = self._qwen_settings(root, mode=0o644)
+            self.assertIsNone(
+                deepseek_runtime_key({}, root=root, qwen_settings=settings)
+            )
+            settings.chmod(0o600)
+            payload = json.loads(settings.read_text(encoding="utf-8"))
+            payload["modelProviders"]["openai"][0]["baseUrl"] = (
+                "https://example.invalid"
+            )
+            settings.write_text(json.dumps(payload), encoding="utf-8")
+            settings.chmod(0o600)
+            self.assertIsNone(
+                deepseek_runtime_key({}, root=root, qwen_settings=settings)
+            )
+
+    def test_environment_precedes_qwen_profile_and_inventory_reports_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = self._qwen_settings(root)
+            self.assertEqual(
+                "environment-secret",
+                deepseek_runtime_key(
+                    {"DEEPSEEK_API_KEY": "environment-secret"},
+                    root=root,
+                    qwen_settings=settings,
+                ),
+            )
+            inventory = authentication_inventory(root, qwen_settings=settings)
+            by_provider = {row["provider"]: row for row in inventory}
+            self.assertEqual("available", by_provider["deepseek"]["status"])
+            self.assertEqual("qwen_private_profile", by_provider["deepseek"]["source"])
+            self.assertEqual("available", by_provider["minimax"]["status"])
+            self.assertNotIn("deepseek-profile-secret", str(inventory))
+
     def test_private_dotenv_reads_only_exact_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / ".env"

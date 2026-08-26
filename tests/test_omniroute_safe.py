@@ -8,10 +8,10 @@ from unittest.mock import patch
 
 from ai_orchestrator.omniroute_safe import (
     EXIT_CONFIG,
+    SafeOmniRouteError,
     _environment,
     _validate_arguments,
     main,
-    SafeOmniRouteError,
 )
 
 

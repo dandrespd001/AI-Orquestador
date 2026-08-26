@@ -5,11 +5,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from ai_orchestrator.credentials import omniroute_runtime_key
-
 
 EXIT_CONFIG = 78
 _DESTRUCTIVE_TOKENS = {"delete", "purge", "remove", "reset", "wipe"}

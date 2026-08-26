@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Self
 
 from ai_orchestrator.models import ContractError, TaskSpec, ensure_private_directory
 from ai_orchestrator.supervisor import run_supervised
@@ -42,8 +43,7 @@ def _git(repo: Path, args: list[str], *, input_data: bytes | None = None) -> byt
         ["git", "-C", str(repo), *args],
         input=input_data,
         stdin=None if input_data is not None else subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=30,
         check=False,
         env={
@@ -76,7 +76,7 @@ class WorktreeTransaction:
         self.worktree: Path | None = None
         self.ignored_baseline: frozenset[str] = frozenset()
 
-    def __enter__(self) -> "WorktreeTransaction":
+    def __enter__(self) -> Self:
         top = Path(_git(self.source, ["rev-parse", "--show-toplevel"]).decode().strip()).resolve()
         if top != self.source:
             raise WriterError("GIT_ROOT_REQUIRED", "task repo must be the Git worktree root")
@@ -374,5 +374,5 @@ def repair_prompt(task_prompt: bytes, outcomes: tuple[GateOutcome, ...]) -> byte
     return (
         task_prompt
         + b"\n\nThe previous edit did not pass the orchestrator gate. "
-        + f"Repair only the allowed files. Failed gate: {command}\n{detail}".encode("utf-8")
+        + f"Repair only the allowed files. Failed gate: {command}\n{detail}".encode()
     )

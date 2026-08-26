@@ -158,7 +158,11 @@ def run_writer_canaries(
         "attempts": attempts,
         "passed": passed_count,
         "status": "PASSED" if passed_count == attempts else "FAILED",
-        "promotion_ready": attempts >= 5 and passed_count == attempts,
+        "containment_ready": attempts >= 5 and passed_count == attempts,
+        # Containment is necessary but never sufficient: quality promotion is
+        # decided separately from five representative fixtures per capability.
+        "promotion_ready": False,
+        "promotion_blocker": "LOCAL_EVALUATION_REQUIRED",
         "results": rows,
         "orchestrator_content_retained": False,
     }

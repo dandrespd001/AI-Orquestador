@@ -14,15 +14,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ai_orchestrator.credentials import minimax_runtime_key, omniroute_runtime_key
+from ai_orchestrator.credentials import (
+    deepseek_runtime_key,
+    minimax_runtime_key,
+    omniroute_runtime_key,
+)
 from ai_orchestrator.kimi_acp import AcpError, run_kimi_acp
 from ai_orchestrator.models import (
     NATIVE_WRITER_PROFILES,
     RouteDecision,
     RunResult,
     TaskSpec,
+    UsageRecord,
     ensure_private_directory,
 )
+from ai_orchestrator.output_contracts import validate_output
 from ai_orchestrator.supervisor import ProcessOutcome, run_supervised
 from ai_orchestrator.writer import (
     WorktreeTransaction,
@@ -58,6 +64,16 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         allowed.update({"OMNIROUTE_API_KEY", "OMNIROUTE_BASE_URL", "OMNIROUTE_CONTEXT"})
     if transport == "qwen_minimax_cli":
         allowed.add("MINIMAX_API_KEY")
+    if transport == "qwen_deepseek_cli":
+        allowed.add("DEEPSEEK_API_KEY")
+    if transport == "deepseek_harness":
+        allowed.update(
+            {
+                "AI_ORCHESTRATOR_SOCKET",
+                "AI_ORCHESTRATOR_HARNESS_CREDENTIAL",
+                "DSH_HOME",
+            }
+        )
     if transport == "kimi_cli":
         allowed.update({"KIMI_CODE_HOME", "KIMI_LOG_LEVEL"})
     result = {key: value for key, value in os.environ.items() if key in allowed}
@@ -68,11 +84,33 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         result["OPENAI_BASE_URL"] = result.pop(
             "OMNIROUTE_BASE_URL", "http://127.0.0.1:20128/v1"
         )
+    elif transport == "qwen_deepseek_cli":
+        runtime_key = deepseek_runtime_key(result)
+        result.pop("DEEPSEEK_API_KEY", None)
+        if runtime_key:
+            result["OPENAI_API_KEY"] = runtime_key
+        result["OPENAI_BASE_URL"] = "https://api.deepseek.com"
+    elif transport == "deepseek_harness":
+        # Harness receives only a loopback-scoped, revocable broker credential.
+        # Provider keys are resolved by the bridge and never enter this process.
+        result.pop("DEEPSEEK_API_KEY", None)
+        result.pop("OPENAI_API_KEY", None)
+        result.pop("OPENAI_BASE_URL", None)
     elif transport == "qwen_minimax_cli":
         runtime_key = minimax_runtime_key(result)
         result.pop("MINIMAX_API_KEY", None)
+        # 2026-08-20: se pasa a la superficie COMPATIBLE CON OPENAI. La
+        # configuracion Anthropic de abajo se verifico el 2026-08-12 y
+        # funcionaba entonces, pero el 2026-08-19 una tarea real devolvio
+        # output_bytes=0 en 5,6 s sin error de red (status MALFORMED_PATCH).
+        # El Director verifico a mano con `qwen --auth-type openai` sobre
+        # https://api.minimax.io/v1 que ese endpoint SI responde. Lo mas
+        # probable es que MiniMax haya cambiado su superficie Anthropic.
+        # Para revertir: restaurar auth_type "anthropic" aqui y en get_command.
         if runtime_key:
-            result["ANTHROPIC_API_KEY"] = runtime_key
+            result["OPENAI_API_KEY"] = runtime_key
+        result["OPENAI_BASE_URL"] = "https://api.minimax.io/v1"
+        # --- HISTORICO, desactivado el 2026-08-20 (ver arriba) ---
         # SIN sufijo /v1: el cliente Anthropic de Qwen lo anade el mismo. Con
         # ".../anthropic/v1" la peticion sale a /anthropic/v1/v1/messages y el
         # servidor devuelve 404 — que Qwen envuelve como subtype=success,
@@ -80,7 +118,7 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         # found]" dentro. Verificado el 2026-08-12: /anthropic/v1/v1/messages
         # da 404 y /anthropic/v1/messages da 401, y con esta base el canario
         # devuelve el token exacto.
-        result["ANTHROPIC_BASE_URL"] = "https://api.minimax.io/anthropic"
+        # result["ANTHROPIC_BASE_URL"] = "https://api.minimax.io/anthropic"
     elif transport == "kimi_cli":
         result["KIMI_DISABLE_TELEMETRY"] = "1"
         result["KIMI_CODE_NO_AUTO_UPDATE"] = "1"
@@ -90,6 +128,15 @@ def _minimal_environment(transport: str) -> dict[str, str]:
         result["KIMI_SUBAGENT_TIMEOUT_MS"] = "1"
         result["KIMI_CODE_BUILTIN_PRODUCT_SKILLS"] = "0"
         result["KIMI_LOG_LEVEL"] = "error"
+    elif transport == "fx_cli":
+        # OAuth remains in ~/.fx/auth.json. API keys are deliberately absent
+        # from the allowlist, and noninteractive `ask` stops on every unresolved
+        # sensitive tool request instead of invoking the paid auto-reviewer.
+        result["FX_MODEL"] = "zai/glm-5.2"
+        result["FX_PERMISSION_MODE"] = "ask"
+        result["FX_MAX_AGENT_STEPS"] = "12"
+        result["FX_AUTO_UPGRADE"] = "0"
+        result["FX_HERDR"] = "0"
     result.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
     result["PYTHONDONTWRITEBYTECODE"] = "1"
     return result
@@ -133,8 +180,14 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             "Bash,Agent,WebFetch,WebSearch",
         ]
         return command
-    if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
-        auth_type = "openai" if decision.transport == "qwen_omniroute_cli" else "anthropic"
+    if decision.transport in {
+        "qwen_deepseek_cli",
+        "qwen_omniroute_cli",
+        "qwen_minimax_cli",
+    }:
+        # 2026-08-20: MiniMax pasa tambien a "openai" — su superficie Anthropic
+        # dejo de responder (output_bytes=0). Antes: "openai" solo para omniroute.
+        auth_type = "openai"
         # Guarded writers never receive a writable mount. They return a diff,
         # which the orchestrator validates and applies inside its worktree.
         guarded_patch = writing and decision.execution_profile == "patch_api_writer"
@@ -160,6 +213,34 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
         ]
     if decision.transport == "kimi_cli":
         return ["kimi", "acp"]
+    if decision.transport == "deepseek_harness":
+        return [
+            sys.executable,
+            "-m",
+            "ai_orchestrator",
+            "harness",
+            "worker",
+            "--model",
+            str(decision.requested_route_model),
+            "--timeout",
+            str(task.timeout_seconds),
+            "--orchestrated-worktree",
+        ]
+    if decision.transport == "fx_cli":
+        if writing:
+            raise AdapterError(
+                "HANDOFF_REQUIRED", "FX promotional route is read-only"
+            )
+        return [
+            "fx",
+            "--no-additional-dirs",
+            "--context-limit",
+            "project_instructions_total_bytes=32768",
+            "ask",
+            "--json",
+            "--no-save",
+            "--no-color",
+        ]
     if decision.transport == "omniroute":
         return [
             "omniroute",
@@ -179,6 +260,7 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
 # Cada CLI ejecutor escribe su propio estado dentro del workspace. No es
 # trabajo del modelo, y en el perfil chunsa cae ademas en rutas protegidas.
 TOOL_STATE_DIRECTORIES = {
+    "qwen_deepseek_cli": (".qwen",),
     "qwen_omniroute_cli": (".qwen",),
     "qwen_minimax_cli": (".qwen",),
     "codex_cli": (".codex",),
@@ -291,6 +373,11 @@ def _run_once(
             worker_environment.pop("OPENAI_API_KEY", None)
             if credential:
                 worker_environment["OMNIROUTE_API_KEY"] = credential
+        elif decision.transport == "qwen_deepseek_cli":
+            credential = deepseek_runtime_key()
+            worker_environment.pop("OPENAI_API_KEY", None)
+            if credential:
+                worker_environment["DEEPSEEK_API_KEY"] = credential
         elif decision.transport == "qwen_minimax_cli":
             credential = minimax_runtime_key()
             worker_environment.pop("ANTHROPIC_API_KEY", None)
@@ -358,7 +445,11 @@ def _run_once(
             return ProcessOutcome(0, outcome.stdout, outcome.stderr), outcome.reported_model, True
         except AcpError as exc:
             return ProcessOutcome(1, b"", str(exc).encode("utf-8")), None, False
-    if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
+    if decision.transport in {
+        "qwen_deepseek_cli",
+        "qwen_omniroute_cli",
+        "qwen_minimax_cli",
+    }:
         # El montaje sigue al perfil. Estaba cableado a False, lo que convertia
         # el parametro en codigo muerto: un escritor nativo recibia el arbol en
         # solo-lectura y no podia escribir lo que --approval-mode auto-edit le
@@ -403,6 +494,19 @@ def _process_status(outcome: ProcessOutcome, decision: RouteDecision) -> tuple[s
             return "CREDENTIAL_UNAVAILABLE", "CREDENTIAL_UNAVAILABLE"
         if b"quota" in combined.lower() or b"usage limit" in combined.lower():
             return "QUOTA_UNAVAILABLE", "QUOTA_UNAVAILABLE"
+        lowered = combined.lower()
+        if b"insufficient balance" in lowered or b"billing limit" in lowered:
+            return "QUOTA_UNAVAILABLE", "QUOTA_UNAVAILABLE"
+        if any(
+            marker in lowered
+            for marker in (b"overloaded", b"temporarily unavailable", b"capacity", b"rate limit")
+        ):
+            return "OVERLOADED", "OVERLOADED"
+        if any(
+            marker in lowered
+            for marker in (b"connection reset", b"connection refused", b"network unreachable", b"temporary failure in name resolution")
+        ):
+            return "NETWORK_ERROR", "NETWORK_ERROR"
         # patch_worker writes a PatchApiError code on stderr and nothing else.
         # It is a fixed literal from a closed set, so trusting it leaks no
         # provider text, and it is the only thing that separates a 429 from a
@@ -410,9 +514,20 @@ def _process_status(outcome: ProcessOutcome, decision: RouteDecision) -> tuple[s
         # for provider prose that deliberately never crosses that boundary.
         code = outcome.stderr.strip().decode("ascii", "ignore")
         if code and code.isupper() and code.replace("_", "").isalnum():
+            transient_status = {
+                "PROVIDER_SERVER_ERROR": "TRANSIENT_PROVIDER_ERROR",
+                "PROVIDER_UNREACHABLE": "NETWORK_ERROR",
+                "PROVIDER_HTTP_408": "TRANSIENT_PROVIDER_ERROR",
+            }.get(code)
+            if transient_status is not None:
+                return transient_status, code
             return "FAILED", code
         return "FAILED", "MODEL_PROCESS_FAILED"
-    if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
+    if decision.transport in {
+        "qwen_deepseek_cli",
+        "qwen_omniroute_cli",
+        "qwen_minimax_cli",
+    }:
         error = _qwen_error(outcome.stdout, outcome.stderr)
         return ("SUCCESS", None) if error is None else (error, error)
     return "SUCCESS", None
@@ -420,7 +535,7 @@ def _process_status(outcome: ProcessOutcome, decision: RouteDecision) -> tuple[s
 
 def _find_reported_model(payload: Any) -> str | None:
     if isinstance(payload, dict):
-        for key in ("model", "requestedModel", "requested_model"):
+        for key in ("model", "reported_model", "requestedModel", "requested_model"):
             value = payload.get(key)
             if isinstance(value, str) and value:
                 return value
@@ -437,9 +552,8 @@ def _find_reported_model(payload: Any) -> str | None:
 
 
 def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None, bool]:
-    if decision.transport in {"codex_cli", "claude_cli"}:
-        # Native clients receive an exact model argv and own their authenticated
-        # connection. The argv is the provenance boundary for those transports.
+    if decision.transport == "codex_cli":
+        # Codex route IDs are concrete policy IDs, not floating family aliases.
         return decision.selected_model, True
     try:
         payload = json.loads(stdout.decode("utf-8"))
@@ -449,7 +563,143 @@ def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None,
     if not reported:
         return None, False
     expected = str(decision.requested_route_model)
+    if decision.transport == "claude_cli":
+        alias = expected.lower()
+        concrete = reported.lower()
+        verified = (
+            concrete != alias
+            and concrete != str(decision.selected_model).lower()
+            and concrete.startswith(f"claude-{alias}-")
+        )
+        return reported, verified
     return reported, reported in {expected, expected.split("/", 1)[-1], decision.selected_model}
+
+
+def _deliverable(stdout: bytes, decision: RouteDecision) -> bytes:
+    """Extract assistant content from provider envelopes, never their metadata."""
+
+    if decision.transport == "codex_cli":
+        rows: list[Any] = []
+        for line in stdout.splitlines():
+            try:
+                rows.append(json.loads(line))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+        payload: Any = rows
+    else:
+        try:
+            payload = json.loads(stdout.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return stdout
+    found = _find_deliverable(payload)
+    return found.encode("utf-8") if found is not None else stdout
+
+
+def _find_deliverable(payload: Any) -> str | None:
+    if isinstance(payload, dict):
+        for key in ("result", "output_text", "text"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        item = payload.get("item")
+        if isinstance(item, dict) and item.get("type") in {
+            "agent_message",
+            "assistant_message",
+        }:
+            value = item.get("text")
+            if isinstance(value, str) and value.strip():
+                return value
+        content = payload.get("content")
+        if isinstance(content, list):
+            for row in reversed(content):
+                found = _find_deliverable(row)
+                if found:
+                    return found
+        for value in reversed(list(payload.values())):
+            found = _find_deliverable(value)
+            if found:
+                return found
+    elif isinstance(payload, list):
+        for value in reversed(payload):
+            found = _find_deliverable(value)
+            if found:
+                return found
+    return None
+
+
+def _usage_record(
+    stdout: bytes,
+    decision: RouteDecision,
+    *,
+    outcome: str,
+    latency_ms: int,
+    provenance_verified: bool,
+) -> UsageRecord:
+    try:
+        if decision.transport == "codex_cli":
+            payload: Any = [json.loads(line) for line in stdout.splitlines() if line.strip()]
+        else:
+            payload = json.loads(stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = None
+    usage = _find_usage(payload) or {}
+    details = usage.get("input_tokens_details")
+    if not isinstance(details, dict):
+        details = {}
+    return UsageRecord(
+        provider=str(decision.provider),
+        model=str(decision.selected_model),
+        outcome=outcome,
+        latency_ms=latency_ms,
+        input_tokens=_optional_int(usage.get("input_tokens")),
+        output_tokens=_optional_int(usage.get("output_tokens")),
+        cached_tokens=_optional_int(
+            usage.get("cache_read_input_tokens", details.get("cached_tokens"))
+        ),
+        cache_write_tokens=_optional_int(usage.get("cache_creation_input_tokens")),
+        credits_used=_optional_float(usage.get("credits_used")),
+        balance_before=_optional_float(usage.get("balance_before")),
+        balance_after=_optional_float(usage.get("balance_after")),
+        provenance_verified=provenance_verified,
+        route_plan_id=decision.plan_id,
+    )
+
+
+def _find_usage(payload: Any) -> dict[str, Any] | None:
+    if isinstance(payload, dict):
+        usage = payload.get("usage")
+        if isinstance(usage, dict):
+            return usage
+        for value in payload.values():
+            found = _find_usage(value)
+            if found is not None:
+                return found
+    elif isinstance(payload, list):
+        for value in reversed(payload):
+            found = _find_usage(value)
+            if found is not None:
+                return found
+    return None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result >= 0 else None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result >= 0 else None
 
 
 def _qwen_error(stdout: bytes, stderr: bytes) -> str | None:
@@ -531,10 +781,22 @@ def _atomic_private_write(path: Path, data: bytes) -> None:
         raise
 
 
+def write_output_artifact(task: TaskSpec, output_path: Path, data: bytes) -> None:
+    """Publish an accepted artifact outside the source repository, atomically."""
+
+    resolved_output = output_path.expanduser().resolve()
+    if resolved_output.is_relative_to(Path(task.repo).resolve()):
+        raise AdapterError(
+            "OUTPUT_IN_REPO_FORBIDDEN", "model output must remain in staging"
+        )
+    _atomic_private_write(resolved_output, data)
+
+
 def execute(
     task: TaskSpec,
     decision: RouteDecision,
     *,
+    prompt_override: bytes | None = None,
     output_path: Path | None = None,
     gate_commands: tuple[str, ...] = (),
     gate_timeout_seconds: int | None = None,
@@ -546,7 +808,7 @@ def execute(
     if prompt_path is None:
         raise AdapterError("PROMPT_REQUIRED", "run requires prompt_file")
 
-    prompt = prompt_path.read_bytes()
+    prompt = prompt_override if prompt_override is not None else prompt_path.read_bytes()
     started = datetime.now(UTC)
     start_ns = time.monotonic_ns()
     stdout = b""
@@ -558,14 +820,24 @@ def execute(
     reported: str | None = None
     provenance = False
     exit_code: int | None = None
+    usage_envelope = b""
+    contract_validated: bool | None = None
+    gate_records: list[dict[str, Any]] = []
 
     if task.write_mode == "read_only":
         outcome, reported, provenance = _run_once(
             task, decision, prompt=prompt, cwd=Path(task.repo)
         )
         exit_code = outcome.returncode
+        usage_envelope = outcome.stdout
         stdout = outcome.stdout
         status, error_code = _process_status(outcome, decision)
+        if status == "SUCCESS":
+            stdout = _deliverable(outcome.stdout, decision)
+            validation = validate_output(task, stdout)
+            contract_validated = validation.valid
+            if not validation.valid:
+                status, error_code = "CONTRACT_INVALID", validation.error_code
     else:
         try:
             with WorktreeTransaction(task) as transaction:
@@ -584,6 +856,7 @@ def execute(
                         cwd=transaction.worktree,
                     )
                     exit_code = outcome.returncode
+                    usage_envelope = outcome.stdout
                     process_status, process_error = _process_status(outcome, decision)
                     if process_status != "SUCCESS":
                         status, error_code = process_status, process_error
@@ -607,11 +880,20 @@ def execute(
                         stdout = salvaged.patch
                         patch_sha256 = salvaged.sha256
                         changed_files = len(salvaged.paths)
+                        validation = validate_output(task, salvaged.patch)
+                        contract_validated = validation.valid
+                        if not validation.valid:
+                            status, error_code = (
+                                "CONTRACT_INVALID",
+                                validation.error_code,
+                            )
+                            break
                         gate_outcomes = run_gates(
                             transaction.worktree,
                             gate_commands,
                             gate_timeout_seconds or task.timeout_seconds,
                         )
+                        gate_records.extend(_gate_records(gate_outcomes))
                         gate_state = gates_passed(gate_outcomes, len(gate_commands))
                         if gate_state:
                             status, error_code = "PATCH_READY", "WRITER_OUTPUT_UNUSABLE"
@@ -635,11 +917,18 @@ def execute(
                         status, error_code = "NO_CHANGES", "NO_CHANGES"
                         break
 
+                    validation = validate_output(task, patch.patch)
+                    contract_validated = validation.valid
+                    if not validation.valid:
+                        status, error_code = "CONTRACT_INVALID", validation.error_code
+                        break
+
                     gate_outcomes = run_gates(
                         transaction.worktree,
                         gate_commands,
                         gate_timeout_seconds or task.timeout_seconds,
                     )
+                    gate_records.extend(_gate_records(gate_outcomes))
                     if gates_passed(gate_outcomes, len(gate_commands)):
                         gate_state = True
                         native_writer = decision.execution_profile == "native_writer"
@@ -687,13 +976,10 @@ def execute(
 
     digest = hashlib.sha256(stdout).hexdigest() if stdout else None
     if output_path is not None and stdout:
-        resolved_output = output_path.expanduser().resolve()
-        if resolved_output.is_relative_to(Path(task.repo).resolve()):
-            raise AdapterError("OUTPUT_IN_REPO_FORBIDDEN", "model output must remain in staging")
-        _atomic_private_write(resolved_output, stdout)
+        write_output_artifact(task, output_path, stdout)
 
     result = RunResult(
-        schema_version=1,
+        schema_version=2,
         run_id=str(uuid.uuid4()),
         decision_id=decision.decision_id,
         task_id=task.task_id,
@@ -715,5 +1001,27 @@ def execute(
         patch_sha256=patch_sha256,
         repairs=repairs,
         gates_passed=gate_state,
+        gate_results=tuple(gate_records),
+        contract_validated=contract_validated,
+        usage=_usage_record(
+            usage_envelope,
+            decision,
+            outcome=status,
+            latency_ms=int(latency_ms),
+            provenance_verified=provenance,
+        ),
     )
     return result, stdout
+
+
+def _gate_records(outcomes: tuple[Any, ...]) -> tuple[dict[str, Any], ...]:
+    """Keep gate status metadata while dropping potentially sensitive output."""
+
+    return tuple(
+        {
+            "command": outcome.command,
+            "returncode": outcome.returncode,
+            "timed_out": outcome.timed_out,
+        }
+        for outcome in outcomes
+    )

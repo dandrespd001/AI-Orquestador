@@ -5,7 +5,8 @@ ConditionPathExists=%h/.local/bin/ai-orchestrator
 [Service]
 Type=oneshot
 UMask=0077
-ExecStart=%h/.local/bin/ai-orchestrator storage maintain --apply-permissions --purge-metadata
+ExecStart=%h/.local/bin/ai-orchestrator storage maintain --apply-permissions --apply
+ExecStart=%h/.local/bin/ai-orchestrator sessions-maintain --retention-days 30 --apply
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateNetwork=yes
@@ -20,4 +21,3 @@ RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX
-

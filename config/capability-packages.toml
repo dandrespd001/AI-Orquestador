@@ -1,0 +1,33 @@
+schema_version = 1
+
+[packages.games]
+description = "Godot 4, C++, deterministic simulation, UI tests and on-demand visual tooling"
+tools = ["godot", "cmake", "ninja", "clang", "gdb"]
+extensions = ["codebase-memory", "tdd-determinism", "dashboard-ui-qa", "playwright"]
+clients = ["harness", "codex", "claude", "qwen", "kimi"]
+estimated_context_tokens = 4200
+license_policy = "free_open_source"
+
+[packages.systems]
+description = "Versioned GCC, Clang, Rust, CMake, Ninja and GDB toolchains"
+tools = ["gcc", "clang", "rustc", "cargo", "cmake", "ninja", "gdb"]
+extensions = ["codebase-memory", "security-best-practices"]
+clients = ["harness", "codex", "claude", "qwen", "opencode"]
+estimated_context_tokens = 3100
+license_policy = "free_open_source"
+
+[packages.research]
+description = "Reproducible uv/Jupyter research with browsing and primary-source documentation"
+tools = ["uv", "jupyter", "pandoc"]
+extensions = ["jupyter-notebook", "playwright"]
+clients = ["harness", "codex", "claude", "kimi", "abacus"]
+estimated_context_tokens = 3600
+license_policy = "free_open_source"
+
+[packages.academic]
+description = "Academic Workbench, literature review, styles, PDF, Pandoc and isolated Quarto/LaTeX"
+tools = ["pandoc", "quarto", "latexmk"]
+extensions = ["academic-workbench", "review-academic-literature", "apply-academic-style", "pdf"]
+clients = ["harness", "codex", "claude", "kimi"]
+estimated_context_tokens = 4400
+license_policy = "free_open_source"

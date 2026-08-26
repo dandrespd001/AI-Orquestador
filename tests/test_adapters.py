@@ -97,6 +97,20 @@ class AdapterTests(unittest.TestCase):
         self.assertIn("--max-wall-time", command)
         self.assertNotIn("opencode", command)
 
+    def test_deepseek_transport_uses_direct_qwen_profile_without_secret_argv(self) -> None:
+        decision = self.decision(
+            selected_model="deepseek-v4-flash",
+            requested_route_model="deepseek-v4-flash",
+            provider="deepseek",
+            family="deepseek",
+            transport="qwen_deepseek_cli",
+        )
+        command = _command(self.task, decision, self.task.prompt_path())
+        self.assertEqual("qwen", command[0])
+        self.assertEqual("deepseek-v4-flash", command[command.index("--model") + 1])
+        self.assertEqual(1, command.count("--max-tool-calls"))
+        self.assertNotIn("DEEPSEEK_API_KEY", " ".join(command))
+
     def test_qwen_writer_uses_read_only_patch_mode_and_real_tool_names(self) -> None:
         task = TaskSpec.from_mapping(
             {
@@ -152,6 +166,29 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual("http://127.0.0.1:20128/v1", environment["OPENAI_BASE_URL"])
         self.assertNotIn("OMNIROUTE_API_KEY", environment)
         self.assertNotIn("MINIMAX_API_KEY", environment)
+
+    def test_minimax_environment_uses_openai_v1_surface(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"HOME": str(self.root), "MINIMAX_API_KEY": "minimax-secret"},
+            clear=True,
+        ):
+            environment = _minimal_environment("qwen_minimax_cli")
+        self.assertEqual("minimax-secret", environment["OPENAI_API_KEY"])
+        self.assertEqual("https://api.minimax.io/v1", environment["OPENAI_BASE_URL"])
+        self.assertNotIn("MINIMAX_API_KEY", environment)
+        self.assertNotIn("ANTHROPIC_API_KEY", environment)
+
+    def test_deepseek_environment_uses_official_api_surface(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"HOME": str(self.root), "DEEPSEEK_API_KEY": "deepseek-secret"},
+            clear=True,
+        ):
+            environment = _minimal_environment("qwen_deepseek_cli")
+        self.assertEqual("deepseek-secret", environment["OPENAI_API_KEY"])
+        self.assertEqual("https://api.deepseek.com", environment["OPENAI_BASE_URL"])
+        self.assertNotIn("DEEPSEEK_API_KEY", environment)
 
     def test_qwen_zero_exit_error_envelope_is_not_success(self) -> None:
         stdout = b'[{"type":"result","subtype":"error","is_error":true,"result":"upstream"}]'

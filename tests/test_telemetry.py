@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -117,6 +116,8 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(1, preview["routes"])
         self.assertTrue(preview["dry_run"])
         self.assertEqual(1, store.report()["route_count"])
+        with self.assertRaises(ValueError):
+            store.preview_metadata_purge(91)
 
 
 if __name__ == "__main__":

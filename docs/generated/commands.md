@@ -1,0 +1,70 @@
+# Command reference
+
+- `ai-orchestrator broker-serve`
+- `ai-orchestrator capability`
+- `ai-orchestrator client canary`
+- `ai-orchestrator client doctor`
+- `ai-orchestrator client install`
+- `ai-orchestrator client list`
+- `ai-orchestrator client-config`
+- `ai-orchestrator component inventory`
+- `ai-orchestrator component list`
+- `ai-orchestrator component promote`
+- `ai-orchestrator component prune`
+- `ai-orchestrator component rollback`
+- `ai-orchestrator component stage`
+- `ai-orchestrator component validate`
+- `ai-orchestrator config sync`
+- `ai-orchestrator control`
+- `ai-orchestrator credential status`
+- `ai-orchestrator credential store`
+- `ai-orchestrator docs check`
+- `ai-orchestrator docs generate`
+- `ai-orchestrator doctor`
+- `ai-orchestrator eval`
+- `ai-orchestrator extension activate`
+- `ai-orchestrator extension approve`
+- `ai-orchestrator extension discover`
+- `ai-orchestrator extension inspect`
+- `ai-orchestrator extension inventory`
+- `ai-orchestrator extension list`
+- `ai-orchestrator extension mark-tested`
+- `ai-orchestrator extension quarantine`
+- `ai-orchestrator extension rollback`
+- `ai-orchestrator gateway-benchmark`
+- `ai-orchestrator gateway-select`
+- `ai-orchestrator harness rollback`
+- `ai-orchestrator harness serve`
+- `ai-orchestrator harness status`
+- `ai-orchestrator harness update`
+- `ai-orchestrator harness worker`
+- `ai-orchestrator harness workspace add`
+- `ai-orchestrator harness workspace list`
+- `ai-orchestrator harness workspace remove`
+- `ai-orchestrator harness-spec`
+- `ai-orchestrator mcp install`
+- `ai-orchestrator mcp serve`
+- `ai-orchestrator mcp status`
+- `ai-orchestrator mcp-serve`
+- `ai-orchestrator model canary`
+- `ai-orchestrator model list`
+- `ai-orchestrator model route`
+- `ai-orchestrator panel`
+- `ai-orchestrator promotion-assess`
+- `ai-orchestrator prompt-optimize`
+- `ai-orchestrator provider-canary`
+- `ai-orchestrator quality-eval`
+- `ai-orchestrator quality-preflight`
+- `ai-orchestrator quota`
+- `ai-orchestrator report`
+- `ai-orchestrator route`
+- `ai-orchestrator route-plan`
+- `ai-orchestrator run`
+- `ai-orchestrator sessions-maintain`
+- `ai-orchestrator status`
+- `ai-orchestrator storage archive`
+- `ai-orchestrator storage audit`
+- `ai-orchestrator storage maintain`
+- `ai-orchestrator task run`
+- `ai-orchestrator task submit`
+- `ai-orchestrator writer-canary`

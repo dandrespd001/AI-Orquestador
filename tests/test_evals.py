@@ -8,7 +8,6 @@ from pathlib import Path
 
 from ai_orchestrator.evals import run_routing_eval
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -32,9 +31,9 @@ class RoutingEvalTests(unittest.TestCase):
                         "output_contract": "unified_diff",
                     },
                     "expected": {
-                        "status": "READY",
-                        "selected_model": "deepseek-v4-flash",
-                        "transport": "qwen_omniroute_cli",
+                        "status": "HANDOFF_REQUIRED",
+                        "selected_model": "gpt-5.6-sol",
+                        "transport": "codex_cli",
                     },
                 }
                 suite = repo / "suite.jsonl"
