@@ -120,7 +120,12 @@ class AdapterTests(unittest.TestCase):
         )
         command = _command(task, decision, task.prompt_path())
         self.assertIn("--safe-mode", command)
-        self.assertNotIn("--auth-type", command)
+        # --auth-type es OBLIGATORIA, no residual. Este test afirmaba lo
+        # contrario y la maquina lo desmintio: sin ella, Qwen 0.22.1 muere en no
+        # interactivo con "No auth type is selected", y con ello caia el
+        # transporte entero -- MiniMax, OmniRoute, DeepSeek y las rutas
+        # gratuitas. Poner OPENAI_API_KEY/OPENAI_BASE_URL no basta.
+        self.assertEqual("openai", command[command.index("--auth-type") + 1])
         self.assertNotIn("--bare", command)
         self.assertIn("plan", command)
         self.assertNotIn("auto-edit", command)

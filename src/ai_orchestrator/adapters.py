@@ -164,26 +164,27 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             command[index] = f"{command[index]},WebFetch,WebSearch"
         return command
     if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
-        # Qwen Code 0.21.15 retiro --auth-type y --bare de la superficie CLI.
-        # La autenticacion OpenAI-compatible se selecciona ahora con
-        # OPENAI_API_KEY/OPENAI_BASE_URL (inyectados por _minimal_environment).
+        # --auth-type VUELVE, y no era opcional. Se quito creyendo que Qwen Code
+        # 0.21.15 lo habia retirado; 0.22.1 lo registra
+        # (choices: openai, anthropic, qwen-oauth, gemini, vertex-ai) y sin el
+        # muere en no interactivo con "No auth type is selected". Poner
+        # OPENAI_API_KEY/OPENAI_BASE_URL no basta: el CLI exige que la seleccion
+        # sea explicita. Verificado el 2026-08-25 contra el binario instalado.
         # --safe-mode evita configuracion, hooks, extensiones, skills y MCP del
         # usuario. Los controles headless siguen aceptados aunque la ayuda corta
         # ya no los enumere; se conservan junto al limite externo del supervisor.
         guarded_patch = writing and decision.execution_profile == "patch_api_writer"
         return [
             "qwen",
+            "--auth-type",
+            "openai",
             "--safe-mode",
             "--output-format",
             "json",
             "--approval-mode",
-            "plan" if guarded_patch or not writing else "auto-edit",
+            _qwen_approval_mode(decision, writing=writing, guarded=guarded_patch),
             "--exclude-tools",
-            (
-                "run_shell_command,agent,skill"
-                if decision.web_access
-                else "run_shell_command,agent,web_fetch,web_search,skill"
-            ),
+            _qwen_excluded_tools(decision, writing=writing),
             "--max-wall-time",
             f"{task.timeout_seconds}s",
             # 100 y 200, no 30 y 32. Misma leccion que subio los turnos de 8 a
@@ -247,6 +248,90 @@ TOOL_STATE_DIRECTORIES = {
 }
 
 
+_QWEN_ALWAYS_EXCLUDED = ("run_shell_command", "agent", "skill")
+_QWEN_WEB_TOOLS = ("web_fetch", "web_search")
+_QWEN_WRITE_TOOLS = ("edit", "write_file", "notebook_edit")
+
+
+def _qwen_excluded_tools(decision: RouteDecision, *, writing: bool) -> str:
+    """La contencion vive aqui, no en el modo de aprobacion.
+
+    `--approval-mode auto` prometia lo mejor de los dos mundos y resulto ser una
+    moneda al aire: medido el 2026-08-25 con dos canarios seguidos, la MISMA
+    clase de llamada -- `web_fetch` sobre raw.githubusercontent.com -- salio
+    `auto_accept: 1` en uno y `auto_accept: 0` en el siguiente. Un clasificador
+    LLM no da una contencion reproducible.
+
+    Asi que en lectura con web se usa `yolo`, que es determinista, y lo que se
+    quita se quita por nombre: ademas de shell, agente y skills, tambien las
+    tres de escritura. Medido: el registro se queda en 21 herramientas sin
+    ninguna de escritura, y `web_fetch` se auto-acepta siempre.
+    """
+
+    excluded = list(_QWEN_ALWAYS_EXCLUDED)
+    if not decision.web_access:
+        excluded.extend(_QWEN_WEB_TOOLS)
+    elif not writing:
+        # `yolo` registra edit/write_file/notebook_edit que `plan` mantenia
+        # fuera. Se retiran por nombre para no perder esa capa al ganar la web.
+        excluded.extend(_QWEN_WRITE_TOOLS)
+    return ",".join(excluded)
+
+
+def _qwen_approval_mode(
+    decision: RouteDecision, *, writing: bool, guarded: bool
+) -> str:
+    """`plan` deniega la web en silencio: hay que decirlo por su nombre.
+
+    Medido el 2026-08-25 con un canario a MiniMax-M3: `web_fetch` SI aparece en
+    el registro de herramientas, pero la llamada vuelve con "Qwen Code requires
+    permission to use 'web_fetch', but that permission was declined
+    (non-interactive mode cannot prompt for confirmation)". Es una boundary tool
+    que pide confirmacion, y en headless la confirmacion se auto-deniega. Abrir
+    `web_access` sin tocar esto deja el rol de investigacion leyendo solo el
+    repositorio, que es justo lo que no es investigar.
+
+    La apertura se acota a lo minimo: SOLO lectura y SOLO con web concedida. Lo
+    que contiene la tarea no es este modo, son las otras tres capas, y ninguna
+    se toca aqui: bwrap monta el arbol con --ro-bind, `--exclude-tools` retira
+    run_shell_command, agent y skill, y HOME es un tmpfs vacio. Una tarea de
+    escritura NUNCA llega a esta rama.
+    """
+
+    if writing:
+        return "plan" if guarded else "auto-edit"
+    return "yolo" if decision.web_access else "plan"
+
+
+def _qwen_runtime(launcher: Path) -> tuple[Path, str]:
+    """Localiza la raiz versionada de Qwen y su punto de entrada real.
+
+    El punto de entrada NO se puede cablear a `bin/qwen`. Qwen Code 0.22.1
+    cambio el reparto de la instalacion: ahora `~/.local/bin/qwen` apunta a
+    `node_modules/.bin/qwen`, que a su vez apunta a
+    `node_modules/@qwen-code/qwen-code/cli-entry.js`, y ya no existe ningun
+    `bin/qwen`. El sandbox seguia ejecutando la ruta antigua y bwrap moria con
+    `execvp /opt/qwen/bin/qwen: No such file or directory` -- returncode 1, cero
+    bytes y dos segundos, que por fuera es indistinguible de un proveedor caido.
+
+    Se deriva del ejecutable ya resuelto, que es la unica fuente que no depende
+    de como reparta los ficheros la version de turno.
+    """
+
+    target = launcher.resolve()
+    for parent in target.parents:
+        if parent.name.startswith("qwen-code-"):
+            return parent, "/opt/qwen/" + target.relative_to(parent).as_posix()
+    candidates = sorted(Path.home().glob(".local/lib/qwen-code-*"))
+    if not candidates:
+        raise AdapterError("SANDBOX_UNAVAILABLE", "cannot locate the Qwen runtime")
+    root = candidates[-1].resolve()
+    try:
+        return root, "/opt/qwen/" + target.relative_to(root).as_posix()
+    except ValueError:
+        return root, "/opt/qwen/bin/qwen"
+
+
 def _qwen_sandbox_command(
     command: list[str], worktree: Path, *, writable: bool = True
 ) -> tuple[list[str], dict[str, str]]:
@@ -256,29 +341,7 @@ def _qwen_sandbox_command(
     qwen = shutil.which("qwen")
     if not bwrap or not qwen:
         raise AdapterError("SANDBOX_UNAVAILABLE", "bwrap and qwen are required")
-    wrapper = Path(qwen).resolve()
-    qwen_root_candidates: list[Path] = []
-    try:
-        launcher = wrapper.read_text(encoding="utf-8")[:4096]
-        matched = re.search(
-            r"['\"](/[^'\"]+/qwen-code-[^/'\"]+)/bin/qwen['\"]", launcher
-        )
-        if matched:
-            qwen_root_candidates.append(Path(matched.group(1)))
-    except (OSError, UnicodeError):
-        pass
-    qwen_root_candidates.extend((wrapper.parents[1] / "lib").glob("qwen-code-*"))
-    if not qwen_root_candidates:
-        # The managed installation keeps the versioned runtime alongside the
-        # wrapper under ~/.local/lib.
-        qwen_root_candidates = sorted(
-            Path(qwen).resolve().parents[1].glob("lib/qwen-code-*")
-        )
-    if not qwen_root_candidates:
-        qwen_root_candidates = sorted(Path.home().glob(".local/lib/qwen-code-*"))
-    if not qwen_root_candidates:
-        raise AdapterError("SANDBOX_UNAVAILABLE", "cannot locate the Qwen runtime")
-    qwen_root = qwen_root_candidates[0].resolve()
+    qwen_root, entrypoint = _qwen_runtime(Path(qwen))
     sandboxed = [
         bwrap,
         "--unshare-all",
@@ -313,7 +376,7 @@ def _qwen_sandbox_command(
         "--chdir",
         "/tmp/workspace",
         "--",
-        "/opt/qwen/bin/qwen",
+        entrypoint,
         *command[1:],
     ]
     return sandboxed, {
