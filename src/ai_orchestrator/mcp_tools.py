@@ -70,13 +70,17 @@ MCP_TOOLS = (
         "description": (
             "Run an explicit AI-Orchestrator task spec through the common policy, "
             "provider adapters, isolation, gates and metadata-only telemetry. "
-            "Writer tasks can only return a patch pending review."
+            "Writer tasks can only return a patch pending review. Without "
+            "output_path the accepted output is returned in the payload and "
+            "never written to disk; output_path must stay outside the task "
+            "repository, which is staged and validated before the model runs."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "spec_path": {"type": "string", "minLength": 1},
                 "model": {"type": "string", "minLength": 1},
+                "output_path": {"type": "string", "minLength": 1},
                 "confirmed_plan_id": {
                     "type": "string",
                     "pattern": "^[0-9a-fA-F-]{36}$",
@@ -94,6 +98,31 @@ MCP_TOOLS = (
         },
     },
 )
+
+
+def _staged_output_path(raw: object, task: Any) -> Path:
+    """Resolve output_path before the model runs, not after.
+
+    write_output_artifact ya rechaza un destino dentro del repo, pero lo hace
+    al final: la corrida se paga entera y despues se pierde. Las siete corridas
+    del 2026-08-26 no dejaron ni un fichero, dos de ellas con el contrato ya
+    validado. Aqui la misma regla cuesta microsegundos.
+    """
+
+    if not isinstance(raw, str) or not raw.strip():
+        raise ContractError("output_path must be a non-empty string")
+    candidate = Path(raw).expanduser()
+    if candidate.is_symlink():
+        raise ContractError("output_path must not be a symlink")
+    resolved = candidate.resolve()
+    if resolved.is_relative_to(Path(task.repo).resolve()):
+        raise ContractError(
+            "output_path must stay outside the task repository: the orchestrator "
+            "publishes to staging and the human copies the reviewed file in"
+        )
+    if not resolved.parent.is_dir():
+        raise ContractError(f"output_path directory does not exist: {resolved.parent}")
+    return resolved
 
 
 class BrokerControlPlane:
@@ -260,6 +289,10 @@ class MCPQueryServer:
                     call["model"] = arguments["model"]
                 if arguments.get("confirmed_plan_id") is not None:
                     call["confirmed_plan_id"] = str(arguments["confirmed_plan_id"])
+                if arguments.get("output_path") is not None:
+                    call["output_path"] = _staged_output_path(
+                        arguments["output_path"], task
+                    )
                 payload = self.task_runner.run(**call)
             else:
                 return self._error(request_id, -32602, "unknown tool")

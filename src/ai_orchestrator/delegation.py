@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from ai_orchestrator.adapters import execute, write_output_artifact
+from ai_orchestrator.adapters import AdapterError, execute, write_output_artifact
 from ai_orchestrator.config import (
     config_root,
     load_gates,
@@ -25,6 +25,35 @@ from ai_orchestrator.telemetry import TelemetryStore
 
 MAX_MCP_TASK_OUTPUT_BYTES = 1_048_576
 _PROFILE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _rescue_unaccepted_output(
+    task: TaskSpec,
+    output_path: Path | None,
+    output: bytes,
+    receipt: dict[str, Any],
+) -> dict[str, Any]:
+    """Persistir lo que el modelo ya genero cuando la entrega no se acepta.
+
+    write_output_artifact solo corre en el camino feliz. Las salidas terminales
+    de run() ocurren cuando el modelo YA produjo texto: cuota agotada, proveedor
+    sin SUCCESS, contrato invalido y las tres de revision. Las siete corridas del
+    2026-08-26 murieron ahi -- dos con el contrato ya validado -- y no dejaron ni
+    un byte que leer.
+
+    El nombre lleva el estado pegado para que un rescate no pueda confundirse
+    jamas con un artefacto aceptado: eso es lo que hacia preferible perderlo.
+    """
+
+    if output_path is None or not output:
+        return receipt
+    status = str(receipt.get("status", "UNKNOWN"))
+    rescue_path = output_path.with_name(f"{output_path.name}.RECHAZADO-{status}")
+    try:
+        write_output_artifact(task, rescue_path, output)
+    except (AdapterError, OSError) as exc:
+        return {**receipt, "rescued_output_path": None, "rescue_error": str(exc)}
+    return {**receipt, "rescued_output_path": str(rescue_path)}
 
 
 class OrchestratorTaskRunner:
@@ -324,6 +353,14 @@ class OrchestratorTaskRunner:
             }
 
         attempts: list[dict[str, Any]] = []
+
+        def terminal(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            """El recibo terminal, pero salvando a disco lo que ya se pago."""
+
+            return _rescue_unaccepted_output(
+                task, output_path, output, self._terminal_receipt(*args, **kwargs)
+            )
+
         try:
             result, output = self._execute_primary(
                 task,
@@ -336,16 +373,16 @@ class OrchestratorTaskRunner:
                 protected_prefixes=selected_profile.protected_path_prefixes,
             )
             if result.status == "QUOTA_UNAVAILABLE":
-                return self._terminal_receipt(
+                return terminal(
                     "REPLAN_REQUIRED", plan, decision, result, attempts
                 )
             if result.status not in {"SUCCESS", "PATCH_READY", "APPLIED"}:
-                return self._terminal_receipt(
+                return terminal(
                     "HANDOFF_REQUIRED", plan, decision, result, attempts
                 )
             validation = validate_output(task, output)
             if not validation.valid:
-                return self._terminal_receipt(
+                return terminal(
                     "CONTRACT_INVALID",
                     plan,
                     decision,
@@ -400,7 +437,7 @@ class OrchestratorTaskRunner:
                     or not any(review.get("verdict") == "revise" for review in reviews)
                     or review_repairs >= task.max_repairs
                 ):
-                    return self._terminal_receipt(
+                    return terminal(
                         "HANDOFF_REQUIRED",
                         plan,
                         decision,
@@ -424,7 +461,7 @@ class OrchestratorTaskRunner:
                     prompt_override=repair_prompt,
                 )
                 if result.status not in {"SUCCESS", "PATCH_READY", "APPLIED"}:
-                    return self._terminal_receipt(
+                    return terminal(
                         "HANDOFF_REQUIRED",
                         plan,
                         decision,
@@ -435,7 +472,7 @@ class OrchestratorTaskRunner:
                     )
                 validation = validate_output(task, output)
                 if not validation.valid:
-                    return self._terminal_receipt(
+                    return terminal(
                         "CONTRACT_INVALID",
                         plan,
                         decision,
@@ -448,7 +485,7 @@ class OrchestratorTaskRunner:
                     )
 
             if plan.reviewer_models and supports_v2_runtime and review_payload is None:
-                return self._terminal_receipt(
+                return terminal(
                     "HANDOFF_REQUIRED",
                     plan,
                     decision,
