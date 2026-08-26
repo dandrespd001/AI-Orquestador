@@ -817,6 +817,32 @@ def _find_reported_model(payload: Any) -> str | None:
     return None
 
 
+def _claude_reported_model(payload: Any) -> str | None:
+    """El CLI de Claude ya no emite `model`: pone el id como CLAVE de modelUsage.
+
+    Medido el 2026-08-26 contra `claude --print --output-format json`: las claves
+    de primer nivel son is_error, result, usage, modelUsage, session_id... y
+    ninguna se llama `model`. El identificador vive en modelUsage:
+
+        "modelUsage": {"claude-opus-5": {"inputTokens": 2, ...}}
+
+    _find_reported_model solo mira VALORES bajo claves `model`/`modelID`, nunca
+    nombres de clave, asi que devolvia None y toda revision moria en
+    PROVENANCE_UNVERIFIED. Dos corridas de A1.R se perdieron por esto, 148 s y
+    177 s de Opus ya pagados y sin veredicto.
+
+    Se exige UNA sola entrada: si la corrida mezclo modelos --un subagente con
+    otra familia-- no se puede atribuir la revision a nadie, y una procedencia
+    ambigua no es una procedencia.
+    """
+
+    usage = payload.get("modelUsage") if isinstance(payload, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    names = [name for name in usage if isinstance(name, str) and name.strip()]
+    return names[0] if len(names) == 1 else None
+
+
 def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None, bool]:
     if decision.transport == "codex_cli":
         # Codex route IDs are concrete policy IDs, not floating family aliases.
@@ -825,6 +851,8 @@ def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None,
     if payload is None:
         return None, False
     reported = _find_reported_model(payload)
+    if not reported and decision.transport == "claude_cli":
+        reported = _claude_reported_model(payload)
     if not reported:
         return None, False
     expected = str(decision.requested_route_model)

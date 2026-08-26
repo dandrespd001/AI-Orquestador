@@ -13,6 +13,7 @@ from ai_orchestrator.adapters import (
     _command,
     _minimal_environment,
     _qwen_error,
+    _reported_model,
     execute,
 )
 from ai_orchestrator.models import RouteDecision, TaskSpec
@@ -438,6 +439,67 @@ class AdapterTests(unittest.TestCase):
 
 
 
+
+    # --- procedencia: el CLI de Claude movio el identificador de sitio ---
+
+    def _claude_review_decision(self) -> RouteDecision:
+        return self.decision(
+            selected_model="claude-opus",
+            requested_route_model="opus",
+            provider="anthropic",
+            family="anthropic-claude",
+            transport="claude_cli",
+        )
+
+    def test_the_model_is_read_from_modelusage_where_the_cli_now_puts_it(
+        self,
+    ) -> None:
+        # Forma real capturada el 2026-08-26: no hay clave "model" en ningun nivel.
+        stdout = json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "result": "revisado",
+                "session_id": "64aad010-b8b2-4dfd-802b-4210020777d9",
+                "modelUsage": {
+                    "claude-opus-5": {"inputTokens": 2, "outputTokens": 4}
+                },
+            }
+        ).encode("utf-8")
+
+        reported, verified = _reported_model(stdout, self._claude_review_decision())
+
+        self.assertEqual("claude-opus-5", reported)
+        self.assertTrue(verified)
+
+    def test_a_run_mixing_two_models_is_not_attributable(self) -> None:
+        stdout = json.dumps(
+            {
+                "result": "revisado",
+                "modelUsage": {
+                    "claude-opus-5": {"outputTokens": 4},
+                    "claude-haiku-4-5-20251001": {"outputTokens": 9},
+                },
+            }
+        ).encode("utf-8")
+
+        reported, verified = _reported_model(stdout, self._claude_review_decision())
+
+        self.assertIsNone(reported)
+        self.assertFalse(verified)
+
+    def test_another_family_answering_is_still_refused(self) -> None:
+        stdout = json.dumps(
+            {"result": "x", "modelUsage": {"claude-sonnet-5": {"outputTokens": 1}}}
+        ).encode("utf-8")
+
+        reported, verified = _reported_model(stdout, self._claude_review_decision())
+
+        self.assertEqual("claude-sonnet-5", reported)
+        self.assertFalse(verified)
+
+
 class ResearchEgressTests(unittest.TestCase):
     """Lo que costo tenerlo al reves: un informe entero escrito de memoria."""
 
@@ -487,6 +549,7 @@ class ReasoningStrippingTests(unittest.TestCase):
 
         raw = "# Informe\n\nSin razonamiento ninguno."
         self.assertEqual(raw, _strip_reasoning(raw))
+
 
 
 if __name__ == "__main__":
