@@ -119,6 +119,9 @@ class AdapterTests(unittest.TestCase):
             execution_profile="patch_api_writer",
         )
         command = _command(task, decision, task.prompt_path())
+        self.assertIn("--safe-mode", command)
+        self.assertNotIn("--auth-type", command)
+        self.assertNotIn("--bare", command)
         self.assertIn("plan", command)
         self.assertNotIn("auto-edit", command)
         excluded = command[command.index("--exclude-tools") + 1]

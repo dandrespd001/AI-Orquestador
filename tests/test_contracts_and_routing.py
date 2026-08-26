@@ -79,13 +79,21 @@ class ContractsAndRoutingTests(unittest.TestCase):
                 if model.trust_tier == "web_free"
             )
         )
-        self.assertEqual("available", models["gemini-free-fast"].status)
+        promoted_free = {
+            "gemini-free-fast",
+            "openrouter-north-code-free",
+            "mistral-devstral-free",
+            "cloudflare-qwen25-coder-free",
+        }
+        self.assertTrue(
+            all(models[model_id].status == "available" for model_id in promoted_free)
+        )
         self.assertTrue(
             all(
                 model.status == "candidate"
                 for model in models.values()
                 if model.trust_tier != "official_subscription"
-                and model.id != "gemini-free-fast"
+                and model.id not in promoted_free
             )
         )
 
@@ -199,6 +207,38 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertEqual("gemini-free-fast", decision.selected_model)
         self.assertEqual("web_free", decision.trust_tier)
         self.assertTrue(decision.auto_execute)
+
+    def test_promoted_openrouter_free_route_keeps_policy_gates(self) -> None:
+        task = self.task(
+            sensitivity="internal",
+            write_mode="validated_patch",
+            allowed_write_paths=["tests"],
+            gate_profile="python-unittest",
+        )
+        decision = select_route(
+            task,
+            load_models(),
+            load_roles(),
+            load_profile("default"),
+            pin="openrouter-north-code-free",
+        )
+        self.assertEqual("openrouter-north-code-free", decision.selected_model)
+        self.assertEqual("openrouter-free", decision.provider)
+        self.assertTrue(decision.auto_execute)
+        self.assertFalse(decision.fallback_allowed)
+
+        confidential = select_route(
+            replace(task, sensitivity="confidential"),
+            load_models(),
+            load_roles(),
+            load_profile("default"),
+            pin="openrouter-north-code-free",
+        )
+        self.assertEqual("NO_ROUTE", confidential.status)
+        self.assertEqual(
+            "web_free_sensitivity_not_allowed",
+            confidential.unavailable["openrouter-north-code-free"],
+        )
 
     def test_web_free_gate_has_two_modes_and_never_leaks_confidential(self) -> None:
         def route(profile_name: str, sensitivity: str):
@@ -336,10 +376,15 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertNotEqual("delegate-minimax-api", decision.transport)
 
     def test_kimi_uses_supervised_acp_when_quota_returns(self) -> None:
+        # El vehiculo es `godot_ui`, no `research`: el 2026-08-25 kimi-official
+        # salio de la lista de research para que su cuota se gaste en
+        # desarrollo, interfaces y graficos. Lo que este test prueba -- que Kimi
+        # se ejecuta por ACP supervisado y auto_execute -- no cambia; solo se
+        # comprueba sobre el rol donde Kimi vive ahora.
         models = load_models()
         models["kimi-official"] = replace(models["kimi-official"], status="available")
         decision = select_route(
-            self.task(task_type="research", input_paths=[]),
+            self.task(task_type="godot_ui", input_paths=[]),
             models,
             load_roles(),
             load_profile("default"),

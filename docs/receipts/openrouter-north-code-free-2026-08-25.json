@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "kind": "writer_canary",
+  "model": "openrouter-north-code-free",
+  "route_model": "openrouter/cohere/north-mini-code:free",
+  "provider": "openrouter-free",
+  "trust_tier": "web_free",
+  "execution_profile": "patch_api_writer",
+  "attempts": 5,
+  "passed": 5,
+  "status": "PASSED",
+  "promotion_ready": true,
+  "provenance_verified": true,
+  "orchestrator_content_retained": false,
+  "observed_latency_ms": [31666, 23542, 21749, 22292, 20825],
+  "preceded_by_clean_probe": true,
+  "probe_latency_ms": 23843,
+  "promotion_date": "2026-08-25"
+}

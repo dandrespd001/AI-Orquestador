@@ -114,6 +114,52 @@ class ContractAndRoutingTests(unittest.TestCase):
         self.assertEqual("https://api.minimax.io/v1", providers["minimax"].endpoint)
         self.assertFalse(providers["minimax"].incremental_spend_allowed)
 
+    def test_verified_free_omniroute_routes_start_as_candidates(self) -> None:
+        providers = load_provider_specs(ROOT / "config")
+        models = load_models(ROOT / "config")
+        expected = {
+            "opencode-mimo-free": (
+                "opencode-free",
+                "oc/mimo-v2.5-free",
+                1_048_576,
+                "candidate",
+            ),
+            "openrouter-north-code-free": (
+                "openrouter-free",
+                "openrouter/cohere/north-mini-code:free",
+                256_000,
+                "available",
+            ),
+            "zai-web-glm-5.3": (
+                "zai-web",
+                "zai-web/glm-5.3",
+                200_000,
+                "candidate",
+            ),
+            "t3-free-qwen3-235b": (
+                "t3-web",
+                "t3-web/qwen3-235b",
+                128_000,
+                "candidate",
+            ),
+        }
+        for model_id, (
+            provider_id,
+            route_model,
+            context_window,
+            status,
+        ) in expected.items():
+            with self.subTest(model=model_id):
+                self.assertIn(provider_id, providers)
+                model = models[model_id]
+                self.assertEqual(provider_id, model.provider)
+                self.assertEqual(route_model, model.route_model)
+                self.assertEqual(context_window, model.context_window)
+                self.assertEqual(status, model.status)
+                self.assertEqual("web_free", model.trust_tier)
+                self.assertEqual("free", model.cost_tier)
+                self.assertEqual("patch_api_writer", model.execution_profile)
+
     def test_kimi_models_are_discovered_without_reading_oauth_tokens(self) -> None:
         class Response:
             def __enter__(self):

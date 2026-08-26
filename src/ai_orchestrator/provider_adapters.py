@@ -30,6 +30,18 @@ class AdapterDefinition:
         return asdict(self)
 
 
+def _omniroute_adapter(provider: str, authentication: str) -> AdapterDefinition:
+    """Build the shared isolated-Qwen boundary for an OmniRoute provider."""
+
+    return AdapterDefinition(
+        provider,
+        "qwen_omniroute_cli",
+        "qwen",
+        authentication,
+        "http://127.0.0.1:20128/v1",
+    )
+
+
 ADAPTERS = {
     row.provider: row
     for row in (
@@ -108,41 +120,19 @@ ADAPTERS = {
             version_pin="0.0.4",
             human_login=True,
         ),
-        AdapterDefinition(
-            "local-ai",
-            "qwen_omniroute_cli",
-            "qwen",
-            "local_gateway",
-            "http://127.0.0.1:20128/v1",
-        ),
-        AdapterDefinition(
-            "antigravity",
-            "qwen_omniroute_cli",
-            "qwen",
-            "oauth_official_store",
-            "http://127.0.0.1:20128/v1",
-        ),
-        AdapterDefinition(
-            "qwen-web",
-            "qwen_omniroute_cli",
-            "qwen",
-            "oauth_official_store",
-            "http://127.0.0.1:20128/v1",
-        ),
-        AdapterDefinition(
-            "huggingchat",
-            "qwen_omniroute_cli",
-            "qwen",
-            "oauth_official_store",
-            "http://127.0.0.1:20128/v1",
-        ),
-        AdapterDefinition(
-            "zenmux-free",
-            "qwen_omniroute_cli",
-            "qwen",
-            "oauth_official_store",
-            "http://127.0.0.1:20128/v1",
-        ),
+        _omniroute_adapter("local-ai", "local_gateway"),
+        _omniroute_adapter("antigravity", "oauth_official_store"),
+        _omniroute_adapter("qwen-web", "omniroute_encrypted_session"),
+        _omniroute_adapter("huggingchat", "omniroute_encrypted_session"),
+        _omniroute_adapter("zenmux-free", "omniroute_encrypted_session"),
+        _omniroute_adapter("opencode-free", "omniroute_no_auth"),
+        _omniroute_adapter("openrouter-free", "omniroute_encrypted_store"),
+        _omniroute_adapter("zai-web", "omniroute_encrypted_session"),
+        _omniroute_adapter("t3-web", "omniroute_encrypted_session"),
+        _omniroute_adapter("groq-free", "omniroute_encrypted_store"),
+        _omniroute_adapter("cloudflare-free", "omniroute_encrypted_store"),
+        _omniroute_adapter("mistral-free", "omniroute_encrypted_store"),
+        _omniroute_adapter("gemini-free", "omniroute_encrypted_store"),
     )
 }
 
@@ -176,6 +166,13 @@ def validate_adapter_catalog(root: Path | None = None) -> dict[str, Any]:
             errors.append(
                 "model transport does not match adapter: "
                 f"{model.id}:{model.transport}!={adapter.transport}"
+            )
+    for provider in providers.values():
+        adapter = ADAPTERS.get(provider.id)
+        if adapter is not None and adapter.authentication != provider.authentication:
+            errors.append(
+                "provider authentication does not match adapter: "
+                f"{provider.id}:{provider.authentication}!={adapter.authentication}"
             )
     return {"schema_version": 1, "ok": not errors, "errors": errors}
 

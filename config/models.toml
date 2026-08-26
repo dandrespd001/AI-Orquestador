@@ -169,7 +169,7 @@ official = true
 # con provenance_verified=true (MiniMax-M3, 5/5 pasadas). La clave anterior quedo
 # revocada, comprobado contra el endpoint real: HTTP 401.
 status = "available"
-roles = ["long_context", "docs", "boilerplate", "bulk_refactor", "content_edit", "data_analysis", "multimodal"]
+roles = ["long_context", "docs", "boilerplate", "bulk_refactor", "content_edit", "data_analysis", "multimodal", "research"]
 max_sensitivity = "internal"
 max_concurrency = 1
 trust_tier = "official_subscription"
@@ -439,3 +439,163 @@ quality_score = 0.55
 # No consume cuota de ninguna suscripcion.
 cost_tier = "free"
 
+# Descubiertos y probados contra el catalogo vivo de OmniRoute 3.8.49 el
+# 2026-08-25. Se registran como candidatos: una conexion sana no demuestra que
+# el modelo pueda producir y aplicar un diff exacto. Solo el canario 5/5 puede
+# promoverlos.
+
+[[models]]
+id = "opencode-mimo-free"
+family = "xiaomi-mimo"
+provider = "opencode-free"
+transport = "qwen_omniroute_cli"
+route_model = "oc/mimo-v2.5-free"
+official = false
+status = "candidate"
+roles = ["implementation", "tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 1048576
+quality_score = 0.55
+cost_tier = "free"
+
+[[models]]
+id = "openrouter-north-code-free"
+family = "cohere-command"
+provider = "openrouter-free"
+transport = "qwen_omniroute_cli"
+route_model = "openrouter/cohere/north-mini-code:free"
+official = false
+# Promovido el 2026-08-25 tras una prueba inicial y un lote reglamentario 5/5:
+# seis diffs exactos consecutivos, gates aprobados y procedencia verificada.
+status = "available"
+roles = ["implementation", "tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 256000
+# Prior conservador de promocion, no benchmark de calidad. La telemetria real
+# sustituye este valor cuando alcanza el minimo de muestras del enrutador.
+quality_score = 0.80
+cost_tier = "free"
+
+[[models]]
+id = "zai-web-glm-5.3"
+family = "zai-glm"
+provider = "zai-web"
+transport = "qwen_omniroute_cli"
+route_model = "zai-web/glm-5.3"
+official = false
+status = "candidate"
+roles = ["implementation", "review", "tests", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 200000
+quality_score = 0.55
+cost_tier = "free"
+
+[[models]]
+id = "t3-free-qwen3-235b"
+family = "qwen"
+provider = "t3-web"
+transport = "qwen_omniroute_cli"
+route_model = "t3-web/qwen3-235b"
+official = false
+status = "candidate"
+roles = ["implementation", "tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 128000
+quality_score = 0.55
+cost_tier = "free"
+
+# APIs oficiales gratuitas comprobadas directamente a traves de OmniRoute el
+# 2026-08-25. Permanecen como candidatas hasta superar el canario de escritura
+# 5/5; la prueba de texto solo confirma autenticacion, cuota y normalizacion.
+
+[[models]]
+id = "groq-gpt-oss-120b-free"
+family = "openai-gpt-oss"
+provider = "groq-free"
+transport = "qwen_omniroute_cli"
+route_model = "groq/openai/gpt-oss-120b"
+official = true
+status = "candidate"
+roles = ["implementation", "review", "tests", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 131072
+quality_score = 0.70
+cost_tier = "free"
+
+[[models]]
+id = "cloudflare-qwen25-coder-free"
+family = "qwen"
+provider = "cloudflare-free"
+transport = "qwen_omniroute_cli"
+route_model = "cf/@cf/qwen/qwen2.5-coder-32b-instruct"
+official = true
+# Promovido el 2026-08-25 tras lote reglamentario 5/5: cinco parches
+# exactos, gates aprobados y procedencia verificada.
+status = "available"
+roles = ["implementation", "tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 32768
+quality_score = 0.76
+cost_tier = "free"
+
+[[models]]
+id = "mistral-devstral-free"
+family = "mistral"
+provider = "mistral-free"
+transport = "qwen_omniroute_cli"
+route_model = "mistral/devstral-latest"
+official = true
+# Promovido el 2026-08-25 tras lote reglamentario 5/5: cinco parches
+# exactos, gates aprobados y procedencia verificada.
+status = "available"
+roles = ["implementation", "review", "tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 262144
+quality_score = 0.79
+cost_tier = "free"
+
+[[models]]
+id = "gemini-31-flash-lite-free"
+family = "gemini"
+provider = "gemini-free"
+transport = "qwen_omniroute_cli"
+route_model = "gemini/gemini-3.1-flash-lite"
+official = true
+status = "candidate"
+roles = ["implementation", "review", "tests", "boilerplate", "docs"]
+max_sensitivity = "internal"
+max_concurrency = 1
+trust_tier = "web_free"
+capabilities = ["read", "write", "tools"]
+execution_profile = "patch_api_writer"
+context_window = 1048576
+quality_score = 0.70
+cost_tier = "free"

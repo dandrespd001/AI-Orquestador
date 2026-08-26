@@ -165,7 +165,7 @@ id = "qwen-web"
 endpoint = "http://127.0.0.1:20128/v1"
 protocol = "local_gateway"
 models = ["qwen-web-max"]
-authentication = "oauth_official_store"
+authentication = "omniroute_encrypted_session"
 quota = "free_route"
 trust = "web_free"
 capabilities = ["read", "write", "tools"]
@@ -178,7 +178,7 @@ id = "huggingchat"
 endpoint = "http://127.0.0.1:20128/v1"
 protocol = "local_gateway"
 models = ["kimi-free-code"]
-authentication = "oauth_official_store"
+authentication = "omniroute_encrypted_session"
 quota = "free_route"
 trust = "web_free"
 capabilities = ["read", "write", "tools"]
@@ -191,8 +191,112 @@ id = "zenmux-free"
 endpoint = "http://127.0.0.1:20128/v1"
 protocol = "local_gateway"
 models = ["kat-coder-free"]
-authentication = "oauth_official_store"
+authentication = "omniroute_encrypted_session"
 quota = "free_route"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "opencode-free"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["opencode-mimo-free"]
+authentication = "omniroute_no_auth"
+quota = "free_route"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "openrouter-free"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["openrouter-north-code-free"]
+authentication = "omniroute_encrypted_store"
+quota = "free_route_50_requests_per_day"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "zai-web"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["zai-web-glm-5.3"]
+authentication = "omniroute_encrypted_session"
+quota = "free_route"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "t3-web"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["t3-free-qwen3-235b"]
+authentication = "omniroute_encrypted_session"
+quota = "free_route_limited"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "groq-free"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["groq-gpt-oss-120b-free"]
+authentication = "omniroute_encrypted_store"
+quota = "official_free_tier_rate_limited"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "cloudflare-free"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["cloudflare-qwen25-coder-free"]
+authentication = "omniroute_encrypted_store"
+quota = "workers_ai_free_daily_neurons"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "mistral-free"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["mistral-devstral-free"]
+authentication = "omniroute_encrypted_store"
+quota = "official_free_experimental_tier"
+trust = "web_free"
+capabilities = ["read", "write", "tools"]
+canary = "writer_canary"
+incremental_spend_allowed = false
+content_retention_allowed = false
+
+[[providers]]
+id = "gemini-free"
+endpoint = "http://127.0.0.1:20128/v1"
+protocol = "local_gateway"
+models = ["gemini-31-flash-lite-free"]
+authentication = "omniroute_encrypted_store"
+quota = "google_ai_studio_free_tier"
 trust = "web_free"
 capabilities = ["read", "write", "tools"]
 canary = "writer_canary"

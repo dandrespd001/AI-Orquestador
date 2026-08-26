@@ -157,15 +157,21 @@ commit. DeepSeek, MiniMax, Kimi y cualquier escritor externo devuelven siempre
 - FX/GLM 5.2: revisión y documentación de sólo lectura durante la promoción;
   segunda opción de investigación después de Kimi.
 - Gemini 3.6 Flash gratuito: tests, boilerplate, documentación e investigación
-  exclusivamente con sensibilidad `public`; promovido después de 5/5 canarios.
+  hasta sensibilidad `internal`; promovido después de 5/5 canarios.
+- Mistral Devstral gratuito: implementación, revisión, tests y documentación;
+  promovido el 2026-08-25 después de 5/5 ediciones exactas.
+- Cloudflare Workers AI/Qwen 2.5 Coder 32B: segunda ruta gratuita de código y
+  boilerplate; promovida el 2026-08-25 después de 5/5 ediciones exactas.
 
 Codex y Claude usan sus clientes oficiales. DeepSeek y MiniMax usan Qwen para
-lectura dentro de bubblewrap, sin shell, agentes ni herramientas web. Para
+lectura dentro de bubblewrap, sin shell, agentes ni herramientas web. Qwen Code
+0.21.15 se invoca sin los flags retirados `--auth-type` y `--bare`, en
+`--safe-mode` y con los límites headless todavía vigentes. Para
 escritura usan sus APIs autenticadas en un subproceso con límite duro y
 devuelven un diff que el orquestador valida y aplica en el worktree. Kimi
 usa ACP: el prompt viaja por JSON-RPC, el cliente controla cada lectura/escritura
 y no anuncia capacidad de terminal. Las rutas web/gratuitas sólo son elegibles
-para tareas `public` y después de promocionarlas individualmente de `candidate`
+hasta la sensibilidad autorizada por cada perfil y después de promocionarlas de `candidate`
 a `available` tras los canarios de contención.
 
 ## Almacenamiento
@@ -268,9 +274,14 @@ usa `--output-format json`, nunca `stream-json`, y un resultado con
 La configuracion reproducible y el rollback estan documentados en
 [la migracion OpenCode/Qwen](docs/opencode-qwen-migration-2026-08-12.md).
 
-Las rutas gratuitas/locales se registran primero como `candidate`. Solo Gemini
-gratuito está actualmente `available`; Qwen local, Qwen Web, Kimi gratuito y
-KAT Coder permanecen inactivos porque no superaron el canario de escritura.
+Las rutas gratuitas/locales se registran primero como `candidate`. Gemini,
+OpenRouter/North Mini Code, Mistral Devstral y Cloudflare/Qwen 2.5 Coder están
+actualmente `available`; Mistral y Cloudflare fueron promovidos el 2026-08-25
+tras sendos lotes 5/5 con diff exacto, gates y procedencia verificada. Groq
+acepta consultas cortas pero rechazó el canario de escritura; Gemini 3.1 Flash
+Lite agotó 180 s, y SambaNova exigió método de pago. Esas tres rutas nuevas no
+entran en selección automática. Qwen local, Qwen Web, Kimi gratuito, KAT Coder,
+OpenCode/MiMo, Z.ai Web y T3 Web permanecen candidatos.
 
 Consulte [la evaluacion del stack](docs/tool-evaluation-2026-08-05.md) para los
 resultados medidos, bloqueos y siguiente paso.

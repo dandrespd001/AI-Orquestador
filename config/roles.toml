@@ -46,6 +46,9 @@ reviewer_reasoning_effort = "xhigh"
 models = [
     "abacus-qwen3.8-max",
     "kimi-official",
+    "openrouter-north-code-free",
+    "mistral-devstral-free",
+    "cloudflare-qwen25-coder-free",
     "deepseek-v4-flash",
     "claude-sonnet",
     "gpt-5.6-sol",
@@ -61,6 +64,9 @@ reviewer_reasoning_effort = "high"
 models = [
     "abacus-qwen3.8-max",
     "gemini-free-fast",
+    "openrouter-north-code-free",
+    "mistral-devstral-free",
+    "cloudflare-qwen25-coder-free",
     "deepseek-v4-flash",
     "claude-sonnet",
     "gpt-5.6-sol",
@@ -73,7 +79,14 @@ reviewer_reasoning_effort = "high"
 # MiniMax se omite a propósito: rinde más en contexto largo y refactor masivo,
 # y su 0.91 se llevaría también este rol.
 [roles.boilerplate]
-models = ["gemini-free-fast", "deepseek-v4-flash", "gpt-5.6-luna"]
+models = [
+    "gemini-free-fast",
+    "openrouter-north-code-free",
+    "cloudflare-qwen25-coder-free",
+    "mistral-devstral-free",
+    "deepseek-v4-flash",
+    "gpt-5.6-luna",
+]
 reviewers = ["gpt-5.6-sol", "claude-sonnet"]
 reasoning_effort = "medium"
 reviewer_reasoning_effort = "high"
@@ -91,14 +104,18 @@ reviewers = ["gpt-5.6-sol", "claude-opus"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
 
-# Kimi encabeza. Grok se omite de `models` pese a declarar research: su 0.92
-# ganaría siempre la lectura y dejaría a Kimi sin uso otra vez.
+# MiniMax lleva research desde el 2026-08-25, por decision del Director, y
+# kimi-official SALE de la lista por el mismo motivo por el que Grok nunca
+# estuvo: con 0.91 ganaria siempre la lectura y se quedaria sin cuota para
+# desarrollo, interfaces y graficos, que es donde agrega valor que otros no
+# dan. Estar en `models` no es ser una opcion: es ganar. Investigar es contexto
+# largo y lectura, el nicho de M3, y ademas no consume la cuota de Kimi.
 [roles.research]
 # El Director abrio la web a este rol el 2026-08-25: investigar sin poder
 # mirar fuera del repositorio no es investigar.
 web_access = true
 models = [
-    "kimi-official",
+    "MiniMax-M3",
     "fx-glm-5.2-promo",
     "claude-sonnet",
 ]
@@ -115,6 +132,9 @@ models = [
     "deepseek-v4-flash",
     "fx-glm-5.2-promo",
     "gemini-free-fast",
+    "openrouter-north-code-free",
+    "mistral-devstral-free",
+    "cloudflare-qwen25-coder-free",
     "claude-sonnet",
 ]
 reviewers = ["gpt-5.6-sol", "claude-sonnet"]
@@ -138,6 +158,7 @@ reviewer_reasoning_effort = "xhigh"
 models = [
     "abacus-grok-4.6",
     "fx-glm-5.2-promo",
+    "mistral-devstral-free",
     "gpt-5.6-terra",
     "deepseek-v4-pro",
     "claude-opus",

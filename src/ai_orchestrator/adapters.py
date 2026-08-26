@@ -164,17 +164,16 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             command[index] = f"{command[index]},WebFetch,WebSearch"
         return command
     if decision.transport in {"qwen_omniroute_cli", "qwen_minimax_cli"}:
-        # 2026-08-20: MiniMax pasa tambien a "openai" — su superficie Anthropic
-        # dejo de responder (output_bytes=0). Antes: "openai" solo para omniroute.
-        auth_type = "openai"
-        # Guarded writers never receive a writable mount. They return a diff,
-        # which the orchestrator validates and applies inside its worktree.
+        # Qwen Code 0.21.15 retiro --auth-type y --bare de la superficie CLI.
+        # La autenticacion OpenAI-compatible se selecciona ahora con
+        # OPENAI_API_KEY/OPENAI_BASE_URL (inyectados por _minimal_environment).
+        # --safe-mode evita configuracion, hooks, extensiones, skills y MCP del
+        # usuario. Los controles headless siguen aceptados aunque la ayuda corta
+        # ya no los enumere; se conservan junto al limite externo del supervisor.
         guarded_patch = writing and decision.execution_profile == "patch_api_writer"
         return [
             "qwen",
-            "--auth-type",
-            auth_type,
-            "--bare",
+            "--safe-mode",
             "--output-format",
             "json",
             "--approval-mode",
@@ -187,17 +186,21 @@ def _command(task: TaskSpec, decision: RouteDecision, prompt_path: Path) -> list
             ),
             "--max-wall-time",
             f"{task.timeout_seconds}s",
-            # 30, no 8. Con 8 solo caben los canarios: una tarea real de
-            # analisis sobre el repo consumio 23 turnos de asistente y 10 de
-            # usuario (medido el 2026-08-12 sobre spatial_hash de CHUNSA001).
-            # Con 8 fallaba SIEMPRE con FatalTurnLimitedError codigo 53, que el
-            # supervisor traduce a TURN_BUDGET_EXCEEDED — un limite que no deja
-            # completar nada no acota el riesgo, solo lo esconde.
-            # El techo real sigue siendo --max-wall-time y --max-tool-calls.
+            # 100 y 200, no 30 y 32. Misma leccion que subio los turnos de 8 a
+            # 30 el 2026-08-12, ahora medida sobre las llamadas: el 2026-08-25
+            # dos encargos reales de CHUNSA murieron con exit 55 y CERO bytes,
+            # uno de ellos tras haber escrito ya los ficheros. Navegar un
+            # cabecero de 2000 lineas para hacer una edicion cuesta varias
+            # llamadas, y 32 no llegan a un encargo de cuatro ficheros. Un
+            # limite que no deja completar nada no acota el riesgo: lo esconde,
+            # y encima disfraza el fallo de saldo agotado porque con
+            # --output-format json morir por limite da 0 bytes.
+            # El techo real sigue siendo --max-wall-time, que corta por reloj y
+            # no depende de lo grande que sea el arbol.
             "--max-session-turns",
-            "30",
+            "100",
             "--max-tool-calls",
-            "32",
+            "200",
             "--model",
             str(decision.requested_route_model),
         ]

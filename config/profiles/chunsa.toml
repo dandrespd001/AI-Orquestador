@@ -22,6 +22,12 @@ allowed_models = [
     "qwen-web-max",
     "kimi-free-code",
     "kat-coder-free",
+    "opencode-mimo-free",
+    "openrouter-north-code-free",
+    "mistral-devstral-free",
+    "cloudflare-qwen25-coder-free",
+    "zai-web-glm-5.3",
+    "t3-free-qwen3-235b",
     "abacus-qwen3.8-27b",
     "abacus-glm-5.3",
 ]
