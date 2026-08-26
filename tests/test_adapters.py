@@ -191,7 +191,8 @@ class AdapterTests(unittest.TestCase):
         permissions = config["agent"]["research"]["permission"]
         self.assertEqual("deny", permissions["*"])
         self.assertEqual("allow", permissions["websearch"])
-        self.assertEqual("deny", permissions["webfetch"])
+        # Un brief que da las URLs hechas necesita leerlas, no buscarlas.
+        self.assertEqual("allow", permissions["webfetch"])
         self.assertEqual("deny", permissions["bash"])
         self.assertEqual("deny", permissions["edit"])
         self.assertNotIn("secret", environment["OPENCODE_CONFIG_CONTENT"])
@@ -434,6 +435,26 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(AdapterError) as context:
             execute(self.task, decision)
         self.assertEqual("HANDOFF_REQUIRED", context.exception.code)
+
+
+
+class ResearchEgressTests(unittest.TestCase):
+    """Lo que costo tenerlo al reves: un informe entero escrito de memoria."""
+
+    def test_the_research_prompt_tells_the_model_to_open_named_urls(self) -> None:
+        from ai_orchestrator.adapters import _research_prompt
+
+        policy = _research_prompt(b"encargo").decode("utf-8")
+        self.assertIn("webfetch", policy)
+        self.assertIn("HTTP status you actually got", policy)
+
+    def test_fetching_without_searching_still_counts_as_research(self) -> None:
+        from ai_orchestrator.adapters import _contains_tool
+
+        # Un encargo que da las seis URLs y prohibe buscar: solo hay webfetch.
+        payload = [{"type": "tool_use", "part": {"tool": "webfetch"}}]
+        self.assertTrue(_contains_tool(payload, "webfetch"))
+        self.assertFalse(_contains_tool(payload, "websearch"))
 
 
 if __name__ == "__main__":
