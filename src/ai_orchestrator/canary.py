@@ -61,6 +61,8 @@ ROUTES = {
             "low",
             "--output-format",
             "json",
+            "--prompt-suggestions",
+            "false",
             "--tools",
             "",
             "--permission-mode",
@@ -321,14 +323,25 @@ def _claude_canary(stdout: bytes, expected: str, model: str) -> tuple[bool, str 
         return False, None
     exact = str(payload.get("result", "")).strip() == expected
     usage = payload.get("modelUsage")
-    reported = next(iter(usage), None) if isinstance(usage, dict) else None
-    reported_model = str(reported) if isinstance(reported, str) else None
     requested_alias = model.lower()
-    concrete = reported_model.lower() if reported_model else ""
+    reported_models = (
+        [str(reported) for reported in usage if isinstance(reported, str)]
+        if isinstance(usage, dict)
+        else []
+    )
+    reported_model = next(
+        (
+            reported
+            for reported in reported_models
+            if reported.lower() != requested_alias
+            and reported.lower().startswith(f"claude-{requested_alias}-")
+        ),
+        reported_models[0] if reported_models else None,
+    )
     provenance = bool(
         reported_model
-        and concrete != requested_alias
-        and concrete.startswith(f"claude-{requested_alias}-")
+        and reported_model.lower() != requested_alias
+        and reported_model.lower().startswith(f"claude-{requested_alias}-")
     )
     return exact and provenance, reported_model
 

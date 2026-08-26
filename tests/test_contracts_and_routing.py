@@ -14,7 +14,7 @@ from ai_orchestrator.config import (
     validate_configuration,
 )
 from ai_orchestrator.models import NATIVE_WRITER_PROFILES, ContractError, TaskSpec
-from ai_orchestrator.routing import select_route
+from ai_orchestrator.routing import plan_route, select_route
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -279,20 +279,36 @@ class ContractsAndRoutingTests(unittest.TestCase):
         self.assertFalse(decision.auto_execute)
         self.assertEqual("HANDOFF_REQUIRED", decision.status)
 
-    def test_kimi_uses_supervised_acp_when_quota_returns(self) -> None:
+    def test_research_routes_minimax_through_web_capable_opencode(self) -> None:
         models = load_models()
-        models["kimi-official"] = replace(models["kimi-official"], status="available")
+        task = self.task(task_type="research", sensitivity="public", input_paths=[])
         decision = select_route(
-            self.task(task_type="research", input_paths=[]),
+            task,
             models,
             load_roles(),
             load_profile("default"),
         )
-        self.assertEqual("kimi-official", decision.selected_model)
-        self.assertEqual("kimi_cli", decision.transport)
+        self.assertEqual("MiniMax-M3", decision.selected_model)
+        self.assertEqual("opencode_minimax_research", decision.transport)
         self.assertTrue(decision.auto_execute)
         self.assertEqual("READY", decision.status)
-        self.assertEqual("kimi_acp_writer", decision.execution_profile)
+        self.assertNotIn("MiniMax-M3", decision.unavailable)
+
+        plan = plan_route(task, models, load_roles(), load_profile("default"))
+        self.assertIn("public_web_research", plan.permissions)
+
+    def test_research_rejects_non_public_context_before_execution(self) -> None:
+        decision = select_route(
+            self.task(task_type="research", sensitivity="internal", input_paths=[]),
+            load_models(),
+            load_roles(),
+            load_profile("default"),
+        )
+        self.assertEqual("NO_ROUTE", decision.status)
+        self.assertEqual(
+            "web_research_requires_public_task",
+            decision.unavailable["MiniMax-M3"],
+        )
 
     def test_path_escape_and_symlink_are_rejected(self) -> None:
         with self.assertRaises(ContractError):

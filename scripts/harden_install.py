@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
 import errno
 import json
 import os
+import secrets
 import shutil
 import sqlite3
 import stat
@@ -11,12 +13,15 @@ import subprocess
 import time
 from pathlib import Path
 
-
 HOME = Path.home()
 SOURCE = Path(__file__).resolve().parents[1]
 STATE_ROOT = HOME / ".local" / "share" / "ai-orchestrator"
 CONFIG_ROOT = HOME / ".config" / "ai-orchestrator"
-BACKUP_ROOT = STATE_ROOT / "backups" / time.strftime("pre-hardening-%Y%m%dT%H%M%SZ", time.gmtime())
+BACKUP_ROOT = (
+    STATE_ROOT
+    / "backups"
+    / time.strftime("pre-hardening-%Y%m%dT%H%M%SZ", time.gmtime())
+)
 OFFICIAL_OMNIROUTE_PROVIDERS = {"deepseek", "kimi-coding", "moonshot", "minimax"}
 
 
@@ -44,7 +49,9 @@ def parse_env(path: Path) -> dict[str, str]:
         values[name.strip()] = value.strip().strip('"').strip("'")
     required = {"OMNIROUTE_API_KEY", "STORAGE_ENCRYPTION_KEY"}
     if not required <= values.keys() or any(not values[name] for name in required):
-        raise RuntimeError("OmniRoute environment does not contain both required credentials")
+        raise RuntimeError(
+            "OmniRoute environment does not contain both required credentials"
+        )
     return {name: values[name] for name in required}
 
 
@@ -60,8 +67,13 @@ def encrypt_credentials(values: dict[str, str]) -> list[str]:
         destination = credentials / f"{credential_name}.cred"
         subprocess.run(
             [
-                "systemd-creds", "encrypt", "--user", "--with-key=host",
-                f"--name={credential_name}", "-", str(destination),
+                "systemd-creds",
+                "encrypt",
+                "--user",
+                "--with-key=host",
+                f"--name={credential_name}",
+                "-",
+                str(destination),
             ],
             input=values[source_name].encode("utf-8"),
             check=True,
@@ -73,7 +85,59 @@ def encrypt_credentials(values: dict[str, str]) -> list[str]:
     return installed
 
 
-def harden_omniroute_database(path: Path, *, apply_provider_policy: bool) -> dict[str, object]:
+def ensure_local_credential(name: str) -> Path:
+    """Create one stable encrypted local-only credential without plaintext storage."""
+
+    if not name or any(
+        character not in "abcdefghijklmnopqrstuvwxyz0123456789_" for character in name
+    ):
+        raise RuntimeError("invalid local credential name")
+    credentials = CONFIG_ROOT / "credentials"
+    private_dir(credentials)
+    destination = credentials / f"{name}.cred"
+    if destination.exists() or destination.is_symlink():
+        metadata = destination.lstat()
+        if (
+            destination.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+        ):
+            raise RuntimeError(f"unsafe local credential: {name}")
+        destination.chmod(0o600)
+        return destination
+    staging = credentials / f".{name}.{os.getpid()}.tmp"
+    if staging.exists() or staging.is_symlink():
+        raise RuntimeError(f"unsafe local credential staging path: {name}")
+    try:
+        subprocess.run(
+            [
+                "systemd-creds",
+                "encrypt",
+                "--user",
+                "--with-key=host",
+                f"--name={name}",
+                "-",
+                str(staging),
+            ],
+            input=secrets.token_urlsafe(48).encode("utf-8"),
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        metadata = staging.lstat()
+        if staging.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+            raise RuntimeError(f"local credential encryption failed: {name}")
+        staging.chmod(0o600)
+        os.replace(staging, destination)
+    finally:
+        if staging.exists() and not staging.is_symlink():
+            staging.unlink()
+    return destination
+
+
+def harden_omniroute_database(
+    path: Path, *, apply_provider_policy: bool
+) -> dict[str, object]:
     backup(path)
     backup(path.with_name(path.name + "-wal"))
     backup(path.with_name(path.name + "-shm"))
@@ -107,24 +171,29 @@ def harden_omniroute_database(path: Path, *, apply_provider_policy: bool) -> dic
 
 
 def install_files() -> None:
-    private_dir(CONFIG_ROOT)
-    for source in (SOURCE / "config").rglob("*"):
-        relative = source.relative_to(SOURCE / "config")
-        target = CONFIG_ROOT / relative
-        if source.is_dir():
-            private_dir(target)
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-            target.chmod(0o600)
+    for config_target in (CONFIG_ROOT, STATE_ROOT / "runtime" / "config"):
+        private_dir(config_target)
+        for source in (SOURCE / "config").rglob("*"):
+            relative = source.relative_to(SOURCE / "config")
+            target = config_target / relative
+            if source.is_dir():
+                private_dir(target)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                target.chmod(0o600)
     bin_dir = HOME / ".local" / "bin"
     private_dir(bin_dir)
+    runtime_bin = STATE_ROOT / "runtime" / "venv" / "bin"
     links = {
-        "ai-orchestrator": SOURCE / ".venv" / "bin" / "ai-orchestrator",
-        "ai-orchestrator-omniroute-wrapper": SOURCE / ".venv" / "bin" / "ai-orchestrator-omniroute-wrapper",
-        "omniroute-safe": SOURCE / ".venv" / "bin" / "omniroute-safe",
+        "ai-orchestrator": runtime_bin / "ai-orchestrator",
+        "ai-orchestrator-omniroute-wrapper": runtime_bin
+        / "ai-orchestrator-omniroute-wrapper",
+        "omniroute-safe": runtime_bin / "omniroute-safe",
     }
     for name, source in links.items():
+        if not source.is_file():
+            raise RuntimeError(f"managed runtime launcher is missing: {source}")
         target = bin_dir / name
         if target.exists() or target.is_symlink():
             if not target.is_symlink() or target.resolve() != source.resolve():
@@ -151,9 +220,14 @@ def install_files() -> None:
 
 def harden_modes(roots: tuple[Path, ...] | None = None) -> dict[str, int]:
     selected_roots = roots or (
-        HOME / ".omniroute", HOME / ".local" / "share" / "opencode",
-        HOME / ".codex", HOME / ".claude", HOME / ".kimi-code",
-        HOME / ".minimax_mcp", STATE_ROOT, CONFIG_ROOT,
+        HOME / ".omniroute",
+        HOME / ".local" / "share" / "opencode",
+        HOME / ".codex",
+        HOME / ".claude",
+        HOME / ".kimi-code",
+        HOME / ".minimax_mcp",
+        STATE_ROOT,
+        CONFIG_ROOT,
     )
     changed = 0
     skipped_read_only = 0
@@ -161,14 +235,20 @@ def harden_modes(roots: tuple[Path, ...] | None = None) -> dict[str, int]:
         if not root.exists() or root.is_symlink():
             continue
         for current, directories, files in os.walk(root, followlinks=False):
-            paths = [Path(current)] + [Path(current) / name for name in directories + files]
+            paths = [Path(current)] + [
+                Path(current) / name for name in directories + files
+            ]
             for path in paths:
                 if path.is_symlink():
                     continue
                 metadata = path.lstat()
                 if metadata.st_uid != os.getuid() or metadata.st_nlink > 1:
                     continue
-                desired = 0o700 if stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o111 else 0o600
+                desired = (
+                    0o700
+                    if stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o111
+                    else 0o600
+                )
                 if stat.S_IMODE(metadata.st_mode) != desired:
                     try:
                         path.chmod(desired)
@@ -195,12 +275,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     if args.install_only and (args.apply or args.apply_provider_policy):
-        raise RuntimeError("--install-only cannot be combined with credential migration flags")
+        raise RuntimeError(
+            "--install-only cannot be combined with credential migration flags"
+        )
     if args.apply_provider_policy and not args.apply:
         raise RuntimeError("--apply-provider-policy requires --apply")
     if args.install_only:
         private_dir(STATE_ROOT)
         install_files()
+        ensure_local_credential("web_search_proxy_key")
         modes = harden_modes()
         print(
             json.dumps(
@@ -235,10 +318,14 @@ def main(argv: list[str] | None = None) -> int:
     private_dir(BACKUP_ROOT)
     init_comm = Path("/proc/1/comm").read_text(encoding="utf-8").strip().lower()
     if init_comm not in {"systemd", "init"}:
-        raise RuntimeError("process visibility is restricted; run hardening from the host user session")
+        raise RuntimeError(
+            "process visibility is restricted; run hardening from the host user session"
+        )
     backup(environment_path)
     install_files()
     credentials = encrypt_credentials(values)
+    ensure_local_credential("web_search_proxy_key")
+    credentials.append("web_search_proxy_key")
     database = harden_omniroute_database(
         HOME / ".omniroute" / "storage.sqlite",
         apply_provider_policy=args.apply_provider_policy,
@@ -254,7 +341,9 @@ def main(argv: list[str] | None = None) -> int:
         "plaintext_environment_retained_until_service_verification": True,
     }
     receipt_path = STATE_ROOT / "hardening-receipt.json"
-    receipt_path.write_text(json.dumps(receipt, sort_keys=True, indent=2), encoding="utf-8")
+    receipt_path.write_text(
+        json.dumps(receipt, sort_keys=True, indent=2), encoding="utf-8"
+    )
     receipt_path.chmod(0o600)
     print(json.dumps(receipt, sort_keys=True))
     return 0

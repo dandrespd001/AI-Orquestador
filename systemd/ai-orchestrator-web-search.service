@@ -1,0 +1,34 @@
+[Unit]
+Description=AI-Orchestrator bounded web-research MCP proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+Environment=AI_ORCHESTRATOR_WEB_SEARCH_PORT=20130
+Environment=AI_ORCHESTRATOR_CONFIG=%h/.config/ai-orchestrator
+Environment=PYTHONPATH=%h/.local/share/ai-orchestrator/runtime/venv/lib/python3.12/site-packages
+ExecStart=/usr/bin/python3 -m ai_orchestrator.web_search_proxy
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=15s
+MemoryHigh=256M
+MemoryMax=512M
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=default.target

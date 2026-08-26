@@ -47,7 +47,7 @@ reasoning_effort = "high"
 reviewer_reasoning_effort = "high"
 
 [roles.research]
-models = ["kimi-official", "fx-glm-5.2-promo", "abacus-grok-4.6", "kimi-free-code", "qwen-web-max", "gemini-free-fast", "claude-sonnet", "claude-opus"]
+models = ["MiniMax-M3", "kimi-official", "fx-glm-5.2-promo", "abacus-grok-4.6", "kimi-free-code", "qwen-web-max", "gemini-free-fast", "claude-sonnet", "claude-opus"]
 reviewers = ["gpt-5.6-terra", "abacus-grok-4.6", "claude-opus"]
 reasoning_effort = "high"
 reviewer_reasoning_effort = "high"

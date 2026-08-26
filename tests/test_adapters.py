@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -82,6 +84,203 @@ class AdapterTests(unittest.TestCase):
         command = _command(self.task, decision, self.task.prompt_path())
         self.assertEqual("claude", command[0])
         self.assertEqual("xhigh", command[command.index("--effort") + 1])
+
+    def test_claude_review_uses_native_structured_output(self) -> None:
+        task = TaskSpec.from_mapping(
+            {
+                "repo": str(self.repo),
+                "task_type": "review",
+                "sensitivity": "internal",
+                "prompt_file": "prompt.txt",
+                "output_contract": "review",
+            }
+        )
+        decision = self.decision(
+            selected_model="claude-opus",
+            requested_route_model="opus",
+            provider="anthropic",
+            family="anthropic-claude",
+            transport="claude_cli",
+        )
+
+        command = _command(task, decision, task.prompt_path())
+
+        schema = json.loads(command[command.index("--json-schema") + 1])
+        self.assertEqual(["verdict", "findings"], schema["required"])
+        self.assertEqual(
+            ["accept", "revise", "escalate"],
+            schema["properties"]["verdict"]["enum"],
+        )
+        finding = schema["properties"]["findings"]["items"]
+        self.assertEqual(["severity", "evidence", "message"], finding["required"])
+        self.assertFalse(schema["additionalProperties"])
+        self.assertFalse(finding["additionalProperties"])
+
+    def test_minimax_research_uses_isolated_opencode_transport(self) -> None:
+        task = TaskSpec.from_mapping(
+            {
+                "repo": str(self.repo),
+                "task_type": "research",
+                "sensitivity": "public",
+                "prompt_file": "prompt.txt",
+            }
+        )
+        decision = self.decision(
+            selected_model="MiniMax-M3",
+            requested_route_model="MiniMax-M3",
+            provider="minimax",
+            family="minimax",
+            transport="opencode_minimax_research",
+        )
+        command = _command(task, decision, task.prompt_path())
+        self.assertEqual("opencode", command[0])
+        self.assertIn("--pure", command)
+        self.assertEqual("minimax-research/MiniMax-M3", command[command.index("--model") + 1])
+        self.assertEqual("research", command[command.index("--agent") + 1])
+
+    def test_minimax_qwen_research_fails_closed_without_search_backend(self) -> None:
+        task = TaskSpec.from_mapping(
+            {
+                "repo": str(self.repo),
+                "task_type": "research",
+                "sensitivity": "public",
+                "prompt_file": "prompt.txt",
+            }
+        )
+        decision = self.decision(
+            selected_model="MiniMax-M3",
+            requested_route_model="MiniMax-M3",
+            provider="minimax",
+            family="minimax",
+            transport="qwen_minimax_cli",
+        )
+        with self.assertRaises(AdapterError) as context:
+            _command(task, decision, task.prompt_path())
+        self.assertEqual("WEB_RESEARCH_UNAVAILABLE", context.exception.code)
+
+    @patch("ai_orchestrator.adapters.run_supervised")
+    def test_minimax_research_environment_is_ephemeral_and_web_only(self, run) -> None:
+        task = TaskSpec.from_mapping(
+            {
+                "repo": str(self.repo),
+                "task_type": "research",
+                "sensitivity": "public",
+                "prompt_file": "prompt.txt",
+            }
+        )
+        decision = self.decision(
+            selected_model="MiniMax-M3",
+            requested_route_model="MiniMax-M3",
+            provider="minimax",
+            family="minimax",
+            transport="opencode_minimax_research",
+        )
+        run.return_value = ProcessOutcome(
+            0,
+            b'{"type":"step_start","model":"MiniMax-M3"}\n'
+            b'{"type":"tool_use","part":{"tool":"websearch"}}\n'
+            b'{"type":"text","text":"researched answer"}\n',
+            b"",
+        )
+        with patch.dict(os.environ, {"MINIMAX_API_KEY": "secret"}, clear=False):
+            result, output = execute(task, decision)
+        self.assertEqual("SUCCESS", result.status)
+        self.assertEqual(b"researched answer", output)
+        environment = run.call_args.kwargs["env"]
+        config = json.loads(environment["OPENCODE_CONFIG_CONTENT"])
+        permissions = config["agent"]["research"]["permission"]
+        self.assertEqual("deny", permissions["*"])
+        self.assertEqual("allow", permissions["websearch"])
+        self.assertEqual("deny", permissions["webfetch"])
+        self.assertEqual("deny", permissions["bash"])
+        self.assertEqual("deny", permissions["edit"])
+        self.assertNotIn("secret", environment["OPENCODE_CONFIG_CONTENT"])
+        self.assertEqual("1", environment["OPENCODE_ENABLE_EXA"])
+        self.assertNotEqual(os.environ.get("HOME"), environment["HOME"])
+
+    @patch("ai_orchestrator.adapters.run_supervised")
+    def test_minimax_research_verifies_model_from_ephemeral_session(self, run) -> None:
+        task = TaskSpec.from_mapping(
+            {
+                "repo": str(self.repo),
+                "task_type": "research",
+                "sensitivity": "public",
+                "prompt_file": "prompt.txt",
+            }
+        )
+        decision = self.decision(
+            selected_model="MiniMax-M3",
+            requested_route_model="MiniMax-M3",
+            provider="minimax",
+            family="minimax",
+            transport="opencode_minimax_research",
+        )
+
+        def opencode_run(*_args, **kwargs):
+            database = Path(kwargs["env"]["XDG_DATA_HOME"]) / "opencode" / "opencode.db"
+            database.parent.mkdir(parents=True)
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, "
+                    "time_created INTEGER, data TEXT)"
+                )
+                connection.execute(
+                    "INSERT INTO message VALUES (?, ?, ?, ?)",
+                    (
+                        "msg_assistant",
+                        "ses_research",
+                        1,
+                        json.dumps(
+                            {
+                                "role": "assistant",
+                                "modelID": "MiniMax-M3",
+                                "providerID": "minimax-research",
+                            }
+                        ),
+                    ),
+                )
+            return ProcessOutcome(
+                0,
+                b'{"type":"step_start","sessionID":"ses_research"}\n'
+                b'{"type":"tool_use","part":{"tool":"websearch"}}\n'
+                b'{"type":"text","text":"researched answer"}\n',
+                b"",
+            )
+
+        run.side_effect = opencode_run
+        with patch.dict(os.environ, {"MINIMAX_API_KEY": "secret"}, clear=False):
+            result, output = execute(task, decision)
+        self.assertEqual("SUCCESS", result.status)
+        self.assertTrue(result.provenance_verified)
+        self.assertEqual("MiniMax-M3", result.reported_model)
+        self.assertEqual(b"researched answer", output)
+
+    @patch("ai_orchestrator.adapters.run_supervised")
+    def test_minimax_research_without_a_real_search_is_rejected(self, run) -> None:
+        task = TaskSpec.from_mapping(
+            {
+                "repo": str(self.repo),
+                "task_type": "research",
+                "sensitivity": "public",
+                "prompt_file": "prompt.txt",
+            }
+        )
+        decision = self.decision(
+            selected_model="MiniMax-M3",
+            requested_route_model="MiniMax-M3",
+            provider="minimax",
+            family="minimax",
+            transport="opencode_minimax_research",
+        )
+        run.return_value = ProcessOutcome(
+            0,
+            b'{"type":"step_start","model":"MiniMax-M3"}\n'
+            b'{"type":"text","text":"answer from memory"}\n',
+            b"",
+        )
+        result, _ = execute(task, decision)
+        self.assertEqual("WEB_RESEARCH_NOT_PERFORMED", result.status)
+        self.assertEqual("WEB_RESEARCH_NOT_PERFORMED", result.error_code)
 
     def test_minimax_transport_uses_bounded_read_only_qwen(self) -> None:
         decision = self.decision(

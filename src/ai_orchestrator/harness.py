@@ -29,6 +29,7 @@ HARNESS_PORT = 3080
 HARNESS_ADMIN_PROFILE = "orchestrator-web"
 HARNESS_PROFILES = frozenset({"orchestrator-web", "orchestrator-worker"})
 HARNESS_MODELS = frozenset({"deepseek-v4-pro", "deepseek-v4-flash"})
+HARNESS_UI_MODELS = HARNESS_MODELS | frozenset({"MiniMax-M3"})
 
 
 def harness_version_supported(version: str) -> bool:
@@ -192,12 +193,17 @@ class WorkspaceRegistry:
 
     def _save(self, rows: list[str]) -> None:
         ensure_private_directory(self.path.parent)
-        data = json.dumps(
-            {"schema_version": 1, "workspaces": sorted(set(rows))},
-            sort_keys=True,
-            indent=2,
-        ).encode("utf-8") + b"\n"
-        descriptor, temporary = tempfile.mkstemp(prefix=".workspaces.", dir=self.path.parent)
+        data = (
+            json.dumps(
+                {"schema_version": 1, "workspaces": sorted(set(rows))},
+                sort_keys=True,
+                indent=2,
+            ).encode("utf-8")
+            + b"\n"
+        )
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".workspaces.", dir=self.path.parent
+        )
         try:
             os.fchmod(descriptor, 0o600)
             with os.fdopen(descriptor, "wb") as handle:
@@ -250,7 +256,10 @@ class WorkspaceRegistry:
     def systemd_dropin(self) -> str:
         rows = self._load()
         directives = (
-            " ".join('"' + row.replace("\\", "\\\\").replace('"', '\\"') + '"' for row in rows)
+            " ".join(
+                '"' + row.replace("\\", "\\\\").replace('"', '\\"') + '"'
+                for row in rows
+            )
             if rows
             else "/run/ai-orchestrator-no-workspaces"
         )
@@ -307,7 +316,9 @@ def run_harness_worker(
 
         catalog_model = load_models().get(model)
         if catalog_model is None or catalog_model.status != "available":
-            status = catalog_model.status if catalog_model is not None else "not_discovered"
+            status = (
+                catalog_model.status if catalog_model is not None else "not_discovered"
+            )
             raise ContractError(f"Harness worker model is unavailable: {status}")
     limit = 14_400 if extended else 3_600
     if not 1 <= timeout_seconds <= limit:
@@ -415,7 +426,9 @@ def run_harness_worker(
             "workspace, and return only the final deliverable."
         )
         if upstream_credential:
-            with HarnessBridge(upstream_credential=upstream_credential, port=0) as bridge:
+            with HarnessBridge(
+                upstream_credential=upstream_credential, port=0
+            ) as bridge:
                 environment["AI_ORCHESTRATOR_HARNESS_CREDENTIAL"] = bridge.credential
                 environment["AI_ORCHESTRATOR_DEEPSEEK_BRIDGE_URL"] = bridge.url
                 outcome = run_supervised(
@@ -426,7 +439,9 @@ def run_harness_worker(
                     timeout_seconds=timeout_seconds,
                 )
         else:
-            environment["AI_ORCHESTRATOR_HARNESS_CREDENTIAL"] = secrets.token_urlsafe(32)
+            environment["AI_ORCHESTRATOR_HARNESS_CREDENTIAL"] = secrets.token_urlsafe(
+                32
+            )
             outcome = run_supervised(
                 [str(executable), "--profile", "orchestrator-worker", instruction],
                 input_data=None,

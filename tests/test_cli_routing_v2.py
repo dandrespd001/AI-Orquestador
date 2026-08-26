@@ -5,6 +5,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from typing import ClassVar
 from unittest.mock import patch
 
@@ -101,6 +102,64 @@ class CliRoutingV2Tests(unittest.TestCase):
             ]
         )
         self.assertEqual("patch_writer", args.target_stage)
+
+    def test_harness_status_fails_when_active_slot_is_not_serving(self) -> None:
+        registry = {
+            "components": {
+                "deepseek-harness": {"active": {"version": "0.1.1-rc.2"}}
+            }
+        }
+        stdout = io.StringIO()
+        with (
+            patch.object(cli.UpdateRegistry, "inventory", return_value=registry),
+            patch.object(
+                cli,
+                "_harness_health",
+                return_value={"reachable": False, "status": None},
+                create=True,
+            ),
+            redirect_stdout(stdout),
+        ):
+            result = cli.command_harness_status(argparse.Namespace(port=3080))
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(cli.EXIT_POLICY, result)
+        self.assertFalse(payload["ready"])
+        self.assertFalse(payload["service"]["reachable"])
+
+    def test_doctor_readiness_requires_live_harness(self) -> None:
+        registry = {
+            "components": {
+                "deepseek-harness": {"active": {"version": "0.1.1-rc.2"}}
+            }
+        }
+        stdout = io.StringIO()
+        with (
+            patch.object(cli, "validate_configuration", return_value={"ok": True, "errors": []}),
+            patch.object(cli.shutil, "which", return_value="/bin/tool"),
+            patch.object(cli, "audit_storage", return_value={"ok": True}),
+            patch.object(cli, "config_sync_status", return_value={"in_sync": True}),
+            patch.object(cli, "_credential_readiness", return_value={"ok": True}),
+            patch.object(cli, "validate_provider_catalog", return_value={"errors": []}),
+            patch.object(cli.UpdateRegistry, "inventory", return_value=registry),
+            patch.object(cli, "_local_health", return_value={"reachable": True, "status": 200}),
+            patch.object(cli, "default_socket_path", return_value=Path("/tmp")),
+            patch.object(
+                cli,
+                "_harness_health",
+                return_value={"reachable": False, "status": None},
+                create=True,
+            ),
+            redirect_stdout(stdout),
+        ):
+            result = cli.command_doctor(
+                argparse.Namespace(profile="default", check="readiness")
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(cli.EXIT_POLICY, result)
+        self.assertFalse(payload["readiness"]["ok"])
+        self.assertFalse(payload["readiness"]["harness_service"])
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 [Unit]
 Description=DeepSeek Harness administrative UI (loopback only)
-Requires=ai-orchestrator-broker.service omniroute-hardened.service
-After=ai-orchestrator-broker.service omniroute-hardened.service
+Requires=ai-orchestrator-broker.service omniroute-hardened.service ai-orchestrator-web-search.service
+After=ai-orchestrator-broker.service omniroute-hardened.service ai-orchestrator-web-search.service
 ConditionPathExists=%h/.local/bin/ai-orchestrator
 
 [Service]
@@ -15,7 +15,7 @@ Environment=AI_ORCHESTRATOR_SKILLS_DIR=%h/.local/share/ai-orchestrator/skills
 Environment=NO_COLOR=1
 WorkingDirectory=/home/adquiod/Imágenes/Project/CHUNSA001
 ExecStart=%h/.local/bin/ai-orchestrator harness serve --profile orchestrator-web --port 3080 --workspace /home/adquiod/Imágenes/Project/CHUNSA001
-ExecStartPost=/usr/bin/curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:3080/
+ExecStartPost=/usr/bin/curl --fail --silent --output /dev/null --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:3080/
 Restart=on-failure
 RestartSec=2s
 TimeoutStartSec=25s

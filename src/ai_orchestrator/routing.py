@@ -299,7 +299,9 @@ def plan_route(
         # opinion, and the Claude authority emits the final disposition.
         reviewers = (*reviewers, selected.id)
     transport = selected.transport
-    if selected.id == "MiniMax-M3" and profile.minimax_mode == "delegate-minimax-api":
+    if selected.id == "MiniMax-M3" and task.task_type == "research":
+        transport = "opencode_minimax_research"
+    elif selected.id == "MiniMax-M3" and profile.minimax_mode == "delegate-minimax-api":
         transport = "delegate-minimax-api"
     bridge_handoff = transport == "delegate-minimax-api"
     codex_implementation = (
@@ -337,6 +339,8 @@ def plan_route(
     else:
         status = "READY" if auto_execute else "HANDOFF_REQUIRED"
     permissions = ["provider_network", "repository_read"]
+    if task.task_type == "research":
+        permissions.append("public_web_research")
     if task.write_mode != "read_only":
         permissions.append("reviewed_patch_write")
     if task.sensitivity != "public":
@@ -689,6 +693,10 @@ def _eligible(
 ) -> tuple[bool, str]:
     if model.id not in profile.allowed_models:
         return False, "profile_denied"
+    if task.task_type == "research" and task.sensitivity != "public":
+        return False, "web_research_requires_public_task"
+    if task.task_type == "research" and "web_research" not in model.capabilities:
+        return False, "model_not_web_research_capable"
     clock = at or datetime.now(UTC)
     if model.available_until is not None and clock.date() >= date.fromisoformat(
         model.available_until
@@ -895,7 +903,9 @@ def select_route(
 
     selected = models[plan.selected_model]
     transport = selected.transport
-    if selected.id == "MiniMax-M3" and profile.minimax_mode == "delegate-minimax-api":
+    if selected.id == "MiniMax-M3" and task.task_type == "research":
+        transport = "opencode_minimax_research"
+    elif selected.id == "MiniMax-M3" and profile.minimax_mode == "delegate-minimax-api":
         transport = "delegate-minimax-api"
     return RouteDecision(
         schema_version=2,

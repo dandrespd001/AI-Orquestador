@@ -189,7 +189,7 @@ official = true
 # con provenance_verified=true (MiniMax-M3, 5/5 pasadas). La clave anterior quedo
 # revocada, comprobado contra el endpoint real: HTTP 401.
 status = "available"
-roles = ["long_context", "docs", "boilerplate", "bulk_refactor"]
+roles = ["long_context", "docs", "boilerplate", "bulk_refactor", "research"]
 max_sensitivity = "internal"
 max_concurrency = 1
 plan = "plus_20"
@@ -200,7 +200,7 @@ economics_confidence = "verified"
 context_window = 1000000
 quality_score = 0.85
 trust_tier = "official_subscription"
-capabilities = ["read", "write", "tools"]
+capabilities = ["read", "write", "tools", "web_research"]
 execution_profile = "patch_api_writer"
 
 [[models]]

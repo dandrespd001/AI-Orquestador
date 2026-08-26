@@ -23,6 +23,9 @@ class CanaryTests(unittest.TestCase):
         self.assertEqual("deepseek-v4-pro", ROUTES["deepseek-pro"].model)
         self.assertIn("harness", ROUTES["deepseek-pro"].command)
         self.assertNotIn("qwen", ROUTES["deepseek-pro"].command)
+        self.assertIn("--prompt-suggestions", ROUTES["anthropic"].command)
+        suggestion_flag = ROUTES["anthropic"].command.index("--prompt-suggestions")
+        self.assertEqual("false", ROUTES["anthropic"].command[suggestion_flag + 1])
         self.assertEqual("kimi-code/k3-256k", ROUTES["moonshot"].model)
         self.assertIn("kimi-code/k3-256k", ROUTES["moonshot"].command)
         self.assertFalse(ROUTES["abacus"].interactive_auth_only)
@@ -82,6 +85,18 @@ class CanaryTests(unittest.TestCase):
         )
         self.assertEqual((False, "claude-haiku-4-5-20251001"), _claude_canary(wrong, "CANARY", "sonnet"))
         self.assertEqual((True, "claude-sonnet-5-20260801"), _claude_canary(right, "CANARY", "sonnet"))
+
+    def test_claude_canary_ignores_auxiliary_model_usage(self) -> None:
+        mixed = (
+            b'{"result":"CANARY","modelUsage":{'
+            b'"claude-haiku-4-5-20251001":{},'
+            b'"claude-sonnet-5":{}}}'
+        )
+
+        self.assertEqual(
+            (True, "claude-sonnet-5"),
+            _claude_canary(mixed, "CANARY", "sonnet"),
+        )
 
     def test_environment_never_forwards_provider_credentials(self) -> None:
         with patch.dict(

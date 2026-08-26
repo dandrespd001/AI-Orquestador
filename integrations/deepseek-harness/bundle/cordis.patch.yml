@@ -1,7 +1,7 @@
 # Shared AI-Orchestrator policy layer for both Harness profiles.
 - id: agent-default-model
   config:
-    provider: deepseek-official
+    provider: !!js process.env.DSH_PROVIDER ?? 'deepseek-official'
     model: !!js process.env.DSH_MODEL ?? 'deepseek-v4-flash'
 
 - id: llm-deepseek
@@ -18,7 +18,24 @@
         name: DeepSeek V4 Flash
 
 - id: llm-pi-ai
-  disabled: true
+  disabled: false
+  config:
+    providers:
+      minimax-orchestrator:
+        displayName: MiniMax through AI-Orchestrator
+        apiKeyEnv: AI_ORCHESTRATOR_HARNESS_CREDENTIAL
+        api: openai-completions
+        baseURL: !!js "(process.env.AI_ORCHESTRATOR_DEEPSEEK_BRIDGE_URL ?? 'http://127.0.0.1:20129') + '/v1'"
+        defaultContextWindow: 1000000
+        defaultMaxTokens: 32768
+        defaultInput: [text]
+        streamIdleTimeoutMs: 300000
+        retryPolicy:
+          mode: normal
+          maxRetries: 2
+        models:
+          - id: MiniMax-M3
+            name: MiniMax M3
 
 - id: session-telemetry-otel
   disabled: true

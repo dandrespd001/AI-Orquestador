@@ -49,12 +49,13 @@ from ai_orchestrator.credentials import (
     deepseek_runtime_key,
     minimax_runtime_key,
     omniroute_runtime_key,
+    resolve_credential,
 )
 from ai_orchestrator.delegation import OrchestratorTaskRunner
 from ai_orchestrator.evals import run_routing_eval
 from ai_orchestrator.extensions import ExtensionRegistry, extension_manifest_from_file
 from ai_orchestrator.harness import (
-    HARNESS_MODELS,
+    HARNESS_UI_MODELS,
     WorkspaceRegistry,
     harness_launch_spec,
     run_harness_worker,
@@ -134,6 +135,18 @@ def _local_health() -> dict[str, object]:
         return {"reachable": False, "status": None}
 
 
+def _harness_health(port: int = 3080) -> dict[str, object]:
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/",
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2.0) as response:
+            return {"reachable": True, "status": response.status}
+    except (urllib.error.URLError, TimeoutError, ConnectionError):
+        return {"reachable": False, "status": None}
+
+
 def _credential_readiness(credentials: dict[str, bool]) -> dict[str, object]:
     return {
         "deepseek_transport": "omniroute_local_bridge",
@@ -174,10 +187,9 @@ def command_doctor(args: argparse.Namespace) -> int:
         default_state_root() / "updates", create=False
     ).inventory()
     harness_active = bool(
-        update_inventory.get("components", {})
-        .get("deepseek-harness", {})
-        .get("active")
+        update_inventory.get("components", {}).get("deepseek-harness", {}).get("active")
     )
+    harness_service = _harness_health()
     omniroute_health = _local_health()
     readiness_ok = bool(
         configuration["ok"]
@@ -185,6 +197,7 @@ def command_doctor(args: argparse.Namespace) -> int:
         and credential_requirements["ok"]
         and default_socket_path().exists()
         and harness_active
+        and harness_service["reachable"]
         and omniroute_health["reachable"]
     )
     compliance_errors = [
@@ -199,12 +212,22 @@ def command_doctor(args: argparse.Namespace) -> int:
         "schema_version": 2,
         "check": args.check,
         "ok": selected_ok,
-        "readiness": {"ok": readiness_ok, "broker": default_socket_path().exists(), "harness": harness_active},
-        "compliance": {"ok": compliance_ok, "errors": compliance_errors, "warnings": []},
+        "readiness": {
+            "ok": readiness_ok,
+            "broker": default_socket_path().exists(),
+            "harness": harness_active,
+            "harness_service": harness_service["reachable"],
+        },
+        "compliance": {
+            "ok": compliance_ok,
+            "errors": compliance_errors,
+            "warnings": [],
+        },
         "configuration": configuration,
         "providers": providers,
         "commands": commands,
         "omniroute": omniroute_health,
+        "harness_service": harness_service,
         "credentials": credentials,
         "credential_requirements": credential_requirements,
         "config_sync": sync,
@@ -287,6 +310,8 @@ def command_harness_status(args: argparse.Namespace) -> int:
     registry = UpdateRegistry(default_state_root() / "updates", create=False)
     inventory = registry.inventory()
     active = inventory.get("components", {}).get("deepseek-harness", {}).get("active")
+    service = _harness_health(args.port)
+    ready = bool(active) and bool(service["reachable"])
     _print(
         {
             "schema_version": 2,
@@ -294,31 +319,48 @@ def command_harness_status(args: argparse.Namespace) -> int:
             "update_channel": "latest",
             "update_policy": "manual_promote",
             "active": active,
-            "ready": bool(active),
+            "ready": ready,
+            "service": service,
             "host": "127.0.0.1",
             "port": args.port,
         }
     )
-    return 0 if active else EXIT_POLICY
+    return 0 if ready else EXIT_POLICY
 
 
 def command_harness_serve(args: argparse.Namespace) -> int:
     upstream_credential = omniroute_runtime_key()
     if not upstream_credential:
         raise ContractError("Harness cannot authenticate to local OmniRoute")
+    search_credential = resolve_credential("web_search_proxy_key")
+    if args.profile == "orchestrator-web" and not search_credential:
+        raise ContractError("Harness web search credential is unavailable")
+    minimax_credential = minimax_runtime_key()
     enabled_models = frozenset(
         model.id
         for model in load_models().values()
-        if model.id in HARNESS_MODELS and model.status == "available"
+        if model.id in HARNESS_UI_MODELS and model.status == "available"
     )
+    if "MiniMax-M3" in enabled_models and not minimax_credential:
+        raise ContractError(
+            "Harness cannot authenticate MiniMax through its local bridge"
+        )
     with HarnessBridge(
         upstream_credential=upstream_credential,
         port=BRIDGE_PORT,
         allowed_models=enabled_models,
+        minimax_credential=minimax_credential,
     ) as bridge:
         spec = harness_launch_spec(profile=args.profile, port=args.port)
         spec.environment["AI_ORCHESTRATOR_HARNESS_CREDENTIAL"] = bridge.credential
         spec.environment["AI_ORCHESTRATOR_DEEPSEEK_BRIDGE_URL"] = bridge.url
+        if search_credential:
+            spec.environment["AI_ORCHESTRATOR_WEB_SEARCH_CREDENTIAL"] = (
+                search_credential
+            )
+            spec.environment["AI_ORCHESTRATOR_WEB_SEARCH_URL"] = (
+                "http://127.0.0.1:20130/mcp"
+            )
         validation = validate_harness_launch(spec)
         if not validation["ok"]:
             raise ContractError(
@@ -381,13 +423,17 @@ def command_harness_workspace(args: argparse.Namespace) -> int:
     else:
         payload = registry.remove(Path(args.path), human_approved=args.approve)
     if args.workspace_command != "list":
-        drop_in = Path(args.drop_in) if args.drop_in else (
-            Path.home()
-            / ".config"
-            / "systemd"
-            / "user"
-            / "ai-orchestrator-harness.service.d"
-            / "20-workspaces.conf"
+        drop_in = (
+            Path(args.drop_in)
+            if args.drop_in
+            else (
+                Path.home()
+                / ".config"
+                / "systemd"
+                / "user"
+                / "ai-orchestrator-harness.service.d"
+                / "20-workspaces.conf"
+            )
         )
         payload["systemd_dropin"] = registry.write_systemd_dropin(
             drop_in, human_approved=args.approve
@@ -871,9 +917,7 @@ def command_component_rollback(args: argparse.Namespace) -> int:
 
 def command_component_prune(args: argparse.Namespace) -> int:
     _print(
-        UpdateRegistry().prune_inactive_slots(
-            args.name, human_approved=args.approve
-        )
+        UpdateRegistry().prune_inactive_slots(args.name, human_approved=args.approve)
     )
     return 0
 
@@ -905,7 +949,9 @@ def command_capability_select(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ai-orchestrator")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     status = subparsers.add_parser("status")
@@ -914,7 +960,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("--profile", default="default")
-    doctor.add_argument("--check", choices=("readiness", "compliance", "all"), default="all")
+    doctor.add_argument(
+        "--check", choices=("readiness", "compliance", "all"), default="all"
+    )
     doctor.set_defaults(func=command_doctor)
 
     config_parser = subparsers.add_parser("config")
@@ -1250,7 +1298,9 @@ def build_parser() -> argparse.ArgumentParser:
     client_install.set_defaults(func=command_client_config)
     client_doctor = client_subparsers.add_parser("doctor")
     client_doctor.add_argument("--profile", default="default")
-    client_doctor.add_argument("--check", choices=("readiness", "compliance", "all"), default="all")
+    client_doctor.add_argument(
+        "--check", choices=("readiness", "compliance", "all"), default="all"
+    )
     client_doctor.set_defaults(func=command_doctor)
     client_canary = client_subparsers.add_parser("canary")
     client_canary.add_argument("--provider", action="append", choices=sorted(ROUTES))
@@ -1295,12 +1345,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     harness_worker.add_argument("--timeout", type=int, default=3600)
     harness_worker.add_argument("--extended", action="store_true")
-    harness_worker.add_argument("--orchestrated-worktree", action="store_true", help=argparse.SUPPRESS)
+    harness_worker.add_argument(
+        "--orchestrated-worktree", action="store_true", help=argparse.SUPPRESS
+    )
     harness_worker.set_defaults(func=command_harness_worker)
     harness_update = harness_subparsers.add_parser("update")
     harness_update.add_argument(
         "--source",
-        default=str(Path(__file__).resolve().parents[2] / "integrations" / "deepseek-harness"),
+        default=str(
+            Path(__file__).resolve().parents[2] / "integrations" / "deepseek-harness"
+        ),
     )
     harness_update.add_argument("--version", default="latest")
     harness_update.set_defaults(func=command_harness_update)

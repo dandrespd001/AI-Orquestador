@@ -49,3 +49,22 @@
   disabled: false
   config:
     maxOutputChars: 16000
+
+# Bounded research egress. The dedicated loopback proxy enforces MCP methods,
+# tool names, public URLs and output limits before contacting its fixed upstream.
+- insert:
+    - id: mcp-web-search
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: web-search
+        transport: streamable-http
+        url: !!js process.env.AI_ORCHESTRATOR_WEB_SEARCH_URL ?? 'http://127.0.0.1:20130/mcp'
+        headers:
+          Authorization: !!js "'Bearer ' + process.env.AI_ORCHESTRATOR_WEB_SEARCH_CREDENTIAL"
+        toolCallTimeoutMs: 60000
+        failOnStartupError: true
+        reconnect:
+          enabled: true
+          initialDelayMs: 500
+          maxDelayMs: 10000
+          maxAttempts: 3

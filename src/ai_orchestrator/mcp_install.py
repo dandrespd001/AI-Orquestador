@@ -83,7 +83,7 @@ def _install_json(path: Path, client: str, desired: dict[str, Any]) -> dict[str,
         }
     else:
         servers = payload.setdefault("mcpServers", {})
-        native = desired
+        native = {**desired, "alwaysLoad": True} if client == "claude" else desired
     if not isinstance(servers, dict):
         raise ContractError("client MCP registry has an invalid native shape")
     legacy = servers.get(LEGACY_SERVER_NAME)

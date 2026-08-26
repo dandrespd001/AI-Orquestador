@@ -38,7 +38,7 @@ ALLOWED_EXECUTION_PROFILES = {
 # montaje escribible. Que un perfil este aqui no implica que pueda auto-aplicar
 # al repo de origen: eso lo decide `native_writer` a solas, en adapters.py.
 NATIVE_WRITER_PROFILES = frozenset({"native_writer", "native_patch_writer"})
-ALLOWED_MODEL_CAPABILITIES = {"read", "write", "tools"}
+ALLOWED_MODEL_CAPABILITIES = {"read", "write", "tools", "web_research"}
 ALLOWED_REASONING_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 ASSURANCE_ORDER = {"standard": 0, "high": 1, "critical": 2}
 

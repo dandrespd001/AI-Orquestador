@@ -54,6 +54,8 @@ def validate_prepared_harness(tree: Path) -> dict[str, Any]:
         "DSH_HOME": str(tree),
         "AI_ORCHESTRATOR_HARNESS_CREDENTIAL": "validation-only",
         "AI_ORCHESTRATOR_DEEPSEEK_BRIDGE_URL": "http://127.0.0.1:20129",
+        "AI_ORCHESTRATOR_WEB_SEARCH_CREDENTIAL": "validation-only",
+        "AI_ORCHESTRATOR_WEB_SEARCH_URL": "http://127.0.0.1:20130/mcp",
         "AI_ORCHESTRATOR_PYTHON": "/usr/bin/python3",
         "AI_ORCHESTRATOR_ROOT": str(tree),
         "AI_ORCHESTRATOR_SOCKET": str(tree / "broker.sock"),
@@ -78,7 +80,15 @@ def validate_prepared_harness(tree: Path) -> dict[str, Any]:
             "deepseek-v4-flash": "deepseek-v4-flash" in output,
             "strict_mcp": "mcp-ai-orchestrator" in output and "chunsa" in output,
             "local_bridge": "127.0.0.1:20129" in output,
+            "minimax": "minimax-orchestrator" in output and "MiniMax-M3" in output,
         }
+        if profile == "orchestrator-web":
+            required["web_research_proxy"] = (
+                "mcp-web-search" in output
+                and "127.0.0.1:20130/mcp" in output
+            )
+        else:
+            required["search_disabled"] = "mcp-web-search" not in output
         if not all(required.values()) or "0.1.0-rc.7" in output:
             raise ContractError(f"Harness profile failed composition validation: {profile}")
         profiles[profile] = required

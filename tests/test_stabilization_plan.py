@@ -45,8 +45,12 @@ class ComponentManifestV2Tests(unittest.TestCase):
         self.assertEqual("0.22.1", pins["qwen-cli"].version)
         self.assertTrue(all(pin.install_slot for pin in pins.values()))
         self.assertTrue(all(pin.active in {True, False} for pin in pins.values()))
-        self.assertTrue(all(pin.update_policy == "manual_promote" for pin in pins.values()))
-        self.assertTrue(all(pin.update_channel in {"latest", "stable"} for pin in pins.values()))
+        self.assertTrue(
+            all(pin.update_policy == "manual_promote" for pin in pins.values())
+        )
+        self.assertTrue(
+            all(pin.update_channel in {"latest", "stable"} for pin in pins.values())
+        )
 
     def test_inventory_is_pure_when_state_does_not_exist(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -89,7 +93,9 @@ class ComponentManifestV2Tests(unittest.TestCase):
             registry.promote(component.name, human_approved=True)
 
             active = registry.resolve_active_executable(component.name)
-            self.assertEqual("#!/bin/sh\necho rc2\n", active.read_text(encoding="utf-8"))
+            self.assertEqual(
+                "#!/bin/sh\necho rc2\n", active.read_text(encoding="utf-8")
+            )
             self.assertTrue((registry.root / component.name / "current").is_symlink())
             self.assertEqual(staged["slot"], str(active.parents[1]))
 
@@ -105,9 +111,7 @@ class ComponentManifestV2Tests(unittest.TestCase):
             registry = UpdateRegistry(root / "registry")
 
             for version in ("old", "current"):
-                executable.write_text(
-                    f"#!/bin/sh\necho {version}\n", encoding="utf-8"
-                )
+                executable.write_text(f"#!/bin/sh\necho {version}\n", encoding="utf-8")
                 executable.chmod(0o755)
                 lock.write_text(
                     json.dumps({"lockfileVersion": 3, "version": version}) + "\n",
@@ -129,9 +133,7 @@ class ComponentManifestV2Tests(unittest.TestCase):
                 )
                 registry.promote(component.name, human_approved=True)
 
-            result = registry.prune_inactive_slots(
-                component.name, human_approved=True
-            )
+            result = registry.prune_inactive_slots(component.name, human_approved=True)
             inventory = registry.inventory()["components"][component.name]
             active, _ = registry.resolve_active_slot(component.name)
             installed = [
@@ -194,7 +196,9 @@ class HarnessContractTests(unittest.TestCase):
         self.assertTrue(hasattr(harness, "WorkspaceRegistry"))
         self.assertTrue(hasattr(harness, "run_harness_worker"))
 
-    def test_worker_profile_has_a_matching_permission_preset_and_mcp_config(self) -> None:
+    def test_worker_profile_has_a_matching_permission_preset_and_mcp_config(
+        self,
+    ) -> None:
         worker = (
             ROOT
             / "integrations/deepseek-harness/profiles/orchestrator-worker/cordis.patch.yml"
@@ -269,7 +273,9 @@ class HarnessContractTests(unittest.TestCase):
             )
 
             self.assertEqual(harness.HARNESS_VERSION, "0.1.1-rc.2")
-            self.assertEqual(str(registry.resolve_active_executable(component.name)), spec.command[0])
+            self.assertEqual(
+                str(registry.resolve_active_executable(component.name)), spec.command[0]
+            )
             self.assertNotIn("npx", spec.command)
             self.assertEqual("orchestrator-web", spec.profile)
             self.assertNotIn("DEEPSEEK_API_KEY", spec.environment)
@@ -339,9 +345,7 @@ class HarnessContractTests(unittest.TestCase):
             drop_in = root / "systemd" / "20-workspaces.conf"
             with self.assertRaisesRegex(ValueError, "human approval"):
                 registry.write_systemd_dropin(drop_in)
-            result = registry.write_systemd_dropin(
-                drop_in, human_approved=True
-            )
+            result = registry.write_systemd_dropin(drop_in, human_approved=True)
             self.assertEqual(str(drop_in.resolve()), result["path"])
             self.assertEqual(
                 f'[Service]\nReadWritePaths="{repo.resolve()}"\n',
@@ -372,7 +376,9 @@ class PublicSurfaceTests(unittest.TestCase):
         self.assertEqual(5, profile.codex_daily_limit)
         self.assertTrue(profile.codex_important_only)
         self.assertEqual(1, profile.max_writers_per_repo)
-        self.assertEqual(("deepseek-v4-pro", "deepseek-v4-flash"), profile.deepseek_models)
+        self.assertEqual(
+            ("deepseek-v4-pro", "deepseek-v4-flash"), profile.deepseek_models
+        )
 
     def test_codex_pin_respects_important_flag_and_shared_daily_counter(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -388,9 +394,7 @@ class PublicSurfaceTests(unittest.TestCase):
                 "write_mode": "read_only",
             }
             ordinary = TaskSpec.from_mapping(base)
-            denied = plan_route(
-                ordinary, models, roles, profile, pin="gpt-5.6-sol"
-            )
+            denied = plan_route(ordinary, models, roles, profile, pin="gpt-5.6-sol")
             self.assertEqual(
                 "codex_requires_important_task", denied.unavailable["gpt-5.6-sol"]
             )
@@ -442,10 +446,21 @@ class PublicSurfaceTests(unittest.TestCase):
             self.assertNotIn("ai-orchestrator", payload["mcpServers"])
             server = payload["mcpServers"]["ai-orchestrator-chunsa"]
             self.assertEqual("/opt/ai-orchestrator", server["command"])
-            self.assertEqual(
-                ["mcp", "serve", "--profile", "chunsa"], server["args"]
-            )
+            self.assertEqual(["mcp", "serve", "--profile", "chunsa"], server["args"])
             self.assertTrue(Path(result["backup"]).is_file())
+
+    def test_claude_always_loads_the_small_strict_mcp_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+
+            install_native_mcp(
+                "claude", home=home, command="/opt/ai-orchestrator"
+            )
+
+            payload = json.loads((home / ".claude.json").read_text())
+            server = payload["mcpServers"]["ai-orchestrator-chunsa"]
+            self.assertIn("alwaysLoad", server)
+            self.assertIs(True, server["alwaysLoad"])
 
     def test_read_only_cli_commands_create_no_state_or_home_files(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -577,7 +592,9 @@ class DeepSeekHarnessTransportTests(unittest.TestCase):
             workspace.mkdir()
             subprocess.run(["git", "init", "-q", str(workspace)], check=True)
             (workspace / "marker.txt").write_text("canonical\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(workspace), "add", "marker.txt"], check=True)
+            subprocess.run(
+                ["git", "-C", str(workspace), "add", "marker.txt"], check=True
+            )
             subprocess.run(
                 [
                     "git",
@@ -598,9 +615,9 @@ class DeepSeekHarnessTransportTests(unittest.TestCase):
             executable.parent.mkdir(parents=True)
             executable.write_text(
                 "#!/bin/sh\n"
-                "case \"$*\" in *sensitive*) exit 90;; esac\n"
-                "test -f \"$AI_ORCHESTRATOR_TASK_FILE\" || exit 91\n"
-                "grep -q sensitive \"$AI_ORCHESTRATOR_TASK_FILE\" || exit 92\n"
+                'case "$*" in *sensitive*) exit 90;; esac\n'
+                'test -f "$AI_ORCHESTRATOR_TASK_FILE" || exit 91\n'
+                'grep -q sensitive "$AI_ORCHESTRATOR_TASK_FILE" || exit 92\n'
                 "printf 'worker-result'\n",
                 encoding="utf-8",
             )
@@ -642,6 +659,59 @@ class DeepSeekHarnessTransportTests(unittest.TestCase):
 
 
 class HarnessBridgeTests(unittest.TestCase):
+    def test_bridge_routes_minimax_without_exposing_its_real_credential(self) -> None:
+        observed: dict[str, object] = {}
+
+        class Upstream(BaseHTTPRequestHandler):
+            def log_message(self, _format: str, *_args: object) -> None:
+                pass
+
+            def do_POST(self) -> None:
+                observed["authorization"] = self.headers["Authorization"]
+                length = int(self.headers["Content-Length"])
+                observed["payload"] = json.loads(self.rfile.read(length))
+                response = b'{"id":"minimax-ok"}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
+
+        try:
+            upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        except PermissionError:
+            self.skipTest("sandbox forbids loopback sockets")
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with HarnessBridge(
+                upstream_credential="omniroute-secret",
+                minimax_credential="minimax-real-secret",
+                minimax_upstream_url=(
+                    f"http://127.0.0.1:{upstream.server_port}/v1/chat/completions"
+                ),
+                allowed_models=frozenset({"MiniMax-M3"}),
+                port=0,
+            ) as bridge:
+                request = urllib.request.Request(
+                    bridge.url + "/v1/chat/completions",
+                    data=json.dumps(
+                        {"model": "MiniMax-M3", "messages": [{"content": "public"}]}
+                    ).encode(),
+                    headers={
+                        "Authorization": f"Bearer {bridge.credential}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                with urllib.request.urlopen(request) as response:
+                    self.assertEqual(b'{"id":"minimax-ok"}', response.read())
+            self.assertEqual("Bearer minimax-real-secret", observed["authorization"])
+            self.assertEqual("MiniMax-M3", observed["payload"]["model"])
+        finally:
+            upstream.shutdown()
+            upstream.server_close()
+            thread.join(timeout=5)
+
     def test_bridge_restricts_auth_model_and_forwards_without_retention(self) -> None:
         observed: dict[str, object] = {}
 
@@ -685,8 +755,12 @@ class HarnessBridgeTests(unittest.TestCase):
                 )
                 with urllib.request.urlopen(request) as response:
                     self.assertEqual(b'{"id":"ok"}', response.read())
-                self.assertEqual("Bearer real-upstream-secret", observed["authorization"])
-                self.assertEqual("private", observed["payload"]["messages"][0]["content"])
+                self.assertEqual(
+                    "Bearer real-upstream-secret", observed["authorization"]
+                )
+                self.assertEqual(
+                    "private", observed["payload"]["messages"][0]["content"]
+                )
                 with self.assertRaises(urllib.error.HTTPError) as denied:
                     urllib.request.urlopen(
                         urllib.request.Request(

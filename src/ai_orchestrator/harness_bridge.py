@@ -16,7 +16,10 @@ from ai_orchestrator.models import ContractError
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 20129
 OMNIROUTE_CHAT_URL = "http://127.0.0.1:20128/v1/chat/completions"
-ALLOWED_MODELS = frozenset({"deepseek-v4-pro", "deepseek-v4-flash"})
+MINIMAX_CHAT_URL = "https://api.minimax.io/v1/chat/completions"
+DEEPSEEK_MODELS = frozenset({"deepseek-v4-pro", "deepseek-v4-flash"})
+MINIMAX_MODELS = frozenset({"MiniMax-M3"})
+ALLOWED_MODELS = DEEPSEEK_MODELS | MINIMAX_MODELS
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
 
 
@@ -31,12 +34,16 @@ class _BridgeServer(ThreadingHTTPServer):
         local_credential: str,
         upstream_credential: str,
         upstream_url: str,
+        minimax_credential: str | None,
+        minimax_upstream_url: str,
         allowed_models: frozenset[str],
     ) -> None:
         super().__init__(address, _BridgeHandler)
         self.local_credential = local_credential
         self.upstream_credential = upstream_credential
         self.upstream_url = upstream_url
+        self.minimax_credential = minimax_credential
+        self.minimax_upstream_url = minimax_upstream_url
         self.allowed_models = allowed_models
 
 
@@ -98,12 +105,22 @@ class _BridgeHandler(BaseHTTPRequestHandler):
         ):
             self._error(400, "HARNESS_BRIDGE_MODEL")
             return
+        model = request_payload["model"]
+        if model in MINIMAX_MODELS:
+            if not self.server.minimax_credential:
+                self._error(503, "HARNESS_BRIDGE_MINIMAX_CREDENTIAL")
+                return
+            upstream_url = self.server.minimax_upstream_url
+            upstream_credential = self.server.minimax_credential
+        else:
+            upstream_url = self.server.upstream_url
+            upstream_credential = self.server.upstream_credential
         request = urllib.request.Request(
-            self.server.upstream_url,
+            upstream_url,
             data=body,
             method="POST",
             headers={
-                "Authorization": f"Bearer {self.server.upstream_credential}",
+                "Authorization": f"Bearer {upstream_credential}",
                 "Content-Type": "application/json",
                 "Accept": self.headers.get("Accept", "application/json"),
             },
@@ -141,7 +158,9 @@ class HarnessBridge(AbstractContextManager["HarnessBridge"]):
         upstream_credential: str,
         port: int = BRIDGE_PORT,
         upstream_url: str = OMNIROUTE_CHAT_URL,
-        allowed_models: frozenset[str] = ALLOWED_MODELS,
+        minimax_credential: str | None = None,
+        minimax_upstream_url: str = MINIMAX_CHAT_URL,
+        allowed_models: frozenset[str] = DEEPSEEK_MODELS,
     ) -> None:
         if not upstream_credential:
             raise ContractError("Harness bridge requires the broker-held OmniRoute key")
@@ -149,12 +168,16 @@ class HarnessBridge(AbstractContextManager["HarnessBridge"]):
             raise ContractError("Harness bridge port is invalid")
         if not allowed_models <= ALLOWED_MODELS:
             raise ContractError("Harness bridge model allowlist is invalid")
+        if allowed_models & MINIMAX_MODELS and not minimax_credential:
+            raise ContractError("Harness bridge requires the broker-held MiniMax key")
         self.credential = secrets.token_urlsafe(32)
         self._server = _BridgeServer(
             (BRIDGE_HOST, port),
             local_credential=self.credential,
             upstream_credential=upstream_credential,
             upstream_url=upstream_url,
+            minimax_credential=minimax_credential,
+            minimax_upstream_url=minimax_upstream_url,
             allowed_models=allowed_models,
         )
         self._thread: threading.Thread | None = None

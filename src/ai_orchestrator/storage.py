@@ -389,7 +389,14 @@ def bound_sqlite_journals(*, apply: bool = False) -> dict[str, Any]:
                 with closing(sqlite3.connect(path, timeout=5.0)) as connection, connection:
                     connection.execute("PRAGMA journal_size_limit=67108864")
                 after = _sqlite_info(path)
-                row.update({"after": after["journal_size_limit"], "backup": str(backup), "status": "APPLIED"})
+                persisted = after["journal_size_limit"] == 67_108_864
+                row.update(
+                    {
+                        "after": after["journal_size_limit"],
+                        "backup": str(backup),
+                        "status": "APPLIED" if persisted else "NOT_PERSISTED",
+                    }
+                )
         rows.append(row)
     return {"dry_run": not apply, "databases": rows}
 

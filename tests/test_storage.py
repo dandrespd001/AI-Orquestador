@@ -5,8 +5,13 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
-from ai_orchestrator.storage import _sqlite_info, disable_omniroute_content_logging
+from ai_orchestrator.storage import (
+    _sqlite_info,
+    bound_sqlite_journals,
+    disable_omniroute_content_logging,
+)
 
 
 class StorageTests(unittest.TestCase):
@@ -46,6 +51,23 @@ class StorageTests(unittest.TestCase):
             self.assertEqual("ok", info["quick_check"])
             self.assertEqual("wal", info["journal_mode"])
             self.assertGreaterEqual(info["reclaimable_bytes"], 0)
+
+    def test_journal_bound_does_not_claim_success_when_sqlite_does_not_persist_it(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "state.sqlite"
+            with closing(sqlite3.connect(path)) as connection, connection:
+                connection.execute("PRAGMA journal_mode=WAL")
+                connection.execute("CREATE TABLE events (id INTEGER PRIMARY KEY)")
+
+            with (
+                patch("ai_orchestrator.storage.SQLITE_TARGETS", ((path, "test-client"),)),
+                patch("ai_orchestrator.storage._client_running", return_value=False),
+                patch("ai_orchestrator.storage._private_backup", return_value=path.with_suffix(".bak")),
+            ):
+                receipt = bound_sqlite_journals(apply=True)
+
+            self.assertEqual(-1, receipt["databases"][0]["after"])
+            self.assertEqual("NOT_PERSISTED", receipt["databases"][0]["status"])
 
 
 if __name__ == "__main__":

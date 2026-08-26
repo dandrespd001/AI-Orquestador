@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import tempfile
 import uuid
 from datetime import UTC, datetime
@@ -26,7 +27,13 @@ def canonical_config_root() -> Path:
     override = os.environ.get("AI_ORCHESTRATOR_SOURCE_CONFIG")
     if override:
         return Path(override).expanduser().resolve()
-    return Path(__file__).resolve().parents[2] / "config"
+    source_checkout = Path(__file__).resolve().parents[2] / "config"
+    if source_checkout.is_dir():
+        return source_checkout
+    managed_runtime = Path(sys.prefix).resolve().parent / "config"
+    if managed_runtime.is_dir():
+        return managed_runtime
+    return source_checkout
 
 
 def _public_files(root: Path) -> tuple[Path, ...]:
