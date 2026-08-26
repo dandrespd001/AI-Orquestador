@@ -818,29 +818,41 @@ def _find_reported_model(payload: Any) -> str | None:
 
 
 def _claude_reported_model(payload: Any) -> str | None:
-    """El CLI de Claude ya no emite `model`: pone el id como CLAVE de modelUsage.
+    """El CLI de Claude ya no emite `model`: pone los ids como CLAVES de modelUsage.
 
-    Medido el 2026-08-26 contra `claude --print --output-format json`: las claves
-    de primer nivel son is_error, result, usage, modelUsage, session_id... y
-    ninguna se llama `model`. El identificador vive en modelUsage:
+    Medido el 2026-08-26 contra el comando exacto de revision, con --json-schema:
 
-        "modelUsage": {"claude-opus-5": {"inputTokens": 2, ...}}
+        "modelUsage": {
+            "claude-haiku-4-5-20251001": {"outputTokens":   15, ...},
+            "claude-opus-5":             {"outputTokens": 2190, ...}
+        }
 
-    _find_reported_model solo mira VALORES bajo claves `model`/`modelID`, nunca
-    nombres de clave, asi que devolvia None y toda revision moria en
-    PROVENANCE_UNVERIFIED. Dos corridas de A1.R se perdieron por esto, 148 s y
-    177 s de Opus ya pagados y sin veredicto.
+    Una corrida legitima de Opus trae SIEMPRE a Haiku al lado: el CLI lo usa para
+    tareas auxiliares. Exigir una sola entrada rechazaba justo el caso bueno, que
+    es como se perdieron tres revisiones de A1.R con PROVENANCE_UNVERIFIED.
 
-    Se exige UNA sola entrada: si la corrida mezclo modelos --un subagente con
-    otra familia-- no se puede atribuir la revision a nadie, y una procedencia
-    ambigua no es una procedencia.
+    Quien reviso es quien escribio: se toma la entrada con mas tokens de salida.
+    2190 contra 15 no admite duda, y un empate no se resuelve inventando: si nadie
+    domina, no hay procedencia que declarar.
     """
 
     usage = payload.get("modelUsage") if isinstance(payload, dict) else None
-    if not isinstance(usage, dict):
+    if not isinstance(usage, dict) or not usage:
         return None
-    names = [name for name in usage if isinstance(name, str) and name.strip()]
-    return names[0] if len(names) == 1 else None
+    scored: list[tuple[int, str]] = []
+    for name, entry in usage.items():
+        if not isinstance(name, str) or not name.strip():
+            continue
+        produced = entry.get("outputTokens") if isinstance(entry, dict) else None
+        if isinstance(produced, bool) or not isinstance(produced, int) or produced < 0:
+            continue
+        scored.append((produced, name))
+    if not scored:
+        return None
+    scored.sort(reverse=True)
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        return None
+    return scored[0][1] if scored[0][0] > 0 else None
 
 
 def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None, bool]:

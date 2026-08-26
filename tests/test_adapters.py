@@ -473,13 +473,30 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual("claude-opus-5", reported)
         self.assertTrue(verified)
 
-    def test_a_run_mixing_two_models_is_not_attributable(self) -> None:
+    def test_the_auxiliary_haiku_does_not_hide_who_did_the_review(self) -> None:
+        # Cifras reales del 2026-08-26: el CLI usa Haiku para tareas internas.
         stdout = json.dumps(
             {
                 "result": "revisado",
                 "modelUsage": {
-                    "claude-opus-5": {"outputTokens": 4},
-                    "claude-haiku-4-5-20251001": {"outputTokens": 9},
+                    "claude-haiku-4-5-20251001": {"outputTokens": 15},
+                    "claude-opus-5": {"outputTokens": 2190},
+                },
+            }
+        ).encode("utf-8")
+
+        reported, verified = _reported_model(stdout, self._claude_review_decision())
+
+        self.assertEqual("claude-opus-5", reported)
+        self.assertTrue(verified)
+
+    def test_a_tie_declares_no_provenance_instead_of_inventing_one(self) -> None:
+        stdout = json.dumps(
+            {
+                "result": "revisado",
+                "modelUsage": {
+                    "claude-opus-5": {"outputTokens": 40},
+                    "claude-sonnet-5": {"outputTokens": 40},
                 },
             }
         ).encode("utf-8")
@@ -489,9 +506,25 @@ class AdapterTests(unittest.TestCase):
         self.assertIsNone(reported)
         self.assertFalse(verified)
 
+    def test_nobody_producing_output_is_not_a_provenance(self) -> None:
+        stdout = json.dumps(
+            {"result": "", "modelUsage": {"claude-opus-5": {"outputTokens": 0}}}
+        ).encode("utf-8")
+
+        reported, verified = _reported_model(stdout, self._claude_review_decision())
+
+        self.assertIsNone(reported)
+        self.assertFalse(verified)
+
     def test_another_family_answering_is_still_refused(self) -> None:
         stdout = json.dumps(
-            {"result": "x", "modelUsage": {"claude-sonnet-5": {"outputTokens": 1}}}
+            {
+                "result": "x",
+                "modelUsage": {
+                    "claude-sonnet-5": {"outputTokens": 900},
+                    "claude-haiku-4-5-20251001": {"outputTokens": 12},
+                },
+            }
         ).encode("utf-8")
 
         reported, verified = _reported_model(stdout, self._claude_review_decision())
