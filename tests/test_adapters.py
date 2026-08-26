@@ -457,5 +457,37 @@ class ResearchEgressTests(unittest.TestCase):
         self.assertFalse(_contains_tool(payload, "websearch"))
 
 
+
+class ReasoningStrippingTests(unittest.TestCase):
+    """Pensar si, guardarlo no: el fichero que lee una persona va limpio."""
+
+    def test_the_saved_report_drops_the_reasoning_block(self) -> None:
+        from ai_orchestrator.adapters import _strip_reasoning
+
+        raw = "<think>voy a leer esto\ny esto otro</think>\n\n# Informe\n\nCuerpo."
+        self.assertEqual("# Informe\n\nCuerpo.", _strip_reasoning(raw))
+
+    def test_an_unclosed_block_is_left_alone_rather_than_emptying_the_file(
+        self,
+    ) -> None:
+        from ai_orchestrator.adapters import _strip_reasoning
+
+        # Salida truncada por limite de tokens: mejor el borrador que la nada.
+        raw = "<think>razonando y me cortaron a mitad"
+        self.assertEqual(raw, _strip_reasoning(raw))
+
+    def test_it_cuts_by_the_last_closer_not_the_first(self) -> None:
+        from ai_orchestrator.adapters import _strip_reasoning
+
+        raw = "<think>uno</think>ruido<think>dos</think>\n# Informe"
+        self.assertEqual("# Informe", _strip_reasoning(raw))
+
+    def test_a_report_without_any_reasoning_survives_untouched(self) -> None:
+        from ai_orchestrator.adapters import _strip_reasoning
+
+        raw = "# Informe\n\nSin razonamiento ninguno."
+        self.assertEqual(raw, _strip_reasoning(raw))
+
+
 if __name__ == "__main__":
     unittest.main()

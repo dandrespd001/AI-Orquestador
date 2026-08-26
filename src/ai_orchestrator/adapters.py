@@ -840,6 +840,37 @@ def _reported_model(stdout: bytes, decision: RouteDecision) -> tuple[str | None,
     return reported, reported in {expected, expected.split("/", 1)[-1], decision.selected_model}
 
 
+_REASONING_CLOSERS = ("</think>", "</thinking>", "</reasoning>")
+
+
+def _strip_reasoning(text: str) -> str:
+    """Quitar el razonamiento del entregable. Pensar si; guardarlo no.
+
+    MiniMax abre <think> y razona en voz alta antes del informe: 208 lineas la
+    primera vez, 152 la segunda, incluido "this is way over budget, let me redo".
+    Eso viajaba entero al fichero que luego lee una persona.
+
+    Se corta por el ULTIMO cierre, no por el primero: un informe puede citar la
+    etiqueta al hablar de otro modelo. Y si hay apertura sin cierre -- salida
+    truncada por limite de tokens -- no se toca nada: mejor entregar el borrador
+    con su ruido que entregar un fichero vacio.
+    """
+
+    lowered = text.lower()
+    # rfind devuelve -1 cuando no hay cierre: sumarle la longitud daria un corte
+    # positivo falso y se comeria las primeras letras del informe.
+    ends = [
+        position + len(closer)
+        for closer in _REASONING_CLOSERS
+        if (position := lowered.rfind(closer)) != -1
+    ]
+    if not ends:
+        return text
+    cut = max(ends)
+    remainder = text[cut:].strip()
+    return remainder if remainder else text
+
+
 def _deliverable(stdout: bytes, decision: RouteDecision) -> bytes:
     """Extract assistant content from provider envelopes, never their metadata."""
 
@@ -847,7 +878,9 @@ def _deliverable(stdout: bytes, decision: RouteDecision) -> bytes:
     if payload is None:
         return stdout
     found = _find_deliverable(payload)
-    return found.encode("utf-8") if found is not None else stdout
+    if found is None:
+        return stdout
+    return _strip_reasoning(found).encode("utf-8")
 
 
 def _find_deliverable(payload: Any) -> str | None:
